@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Technologies & Subdomains - ReconScope{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Technologies & Subdomain Intelligence</h1>
+    <div class="page-subtitle">Subdomain infrastructure mapping and detected software stack signatures</div>
+  </div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; align-items: start;">
+  <!-- Technologies List -->
+  <div class="url-card">
+    <div style="font-size: 16px; font-weight: 700; margin-bottom: 12px;">🧩 Detected Technologies</div>
+    <div id="tech-list" style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="color:var(--text-muted); padding:10px;">Loading technologies...</div>
+    </div>
+  </div>
+
+  <!-- Subdomain Explorer -->
+  <div class="url-card">
+    <div style="font-size: 16px; font-weight: 700; margin-bottom: 12px;">🌐 Discovered Subdomains</div>
+    <div id="subdomains-list" style="display: flex; flex-direction: column; gap: 8px;">
+      <div style="color:var(--text-muted); padding:10px;">Loading subdomains...</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  async function loadTechAndSubdomains() {
+    const targetId = ReconApp.getActiveTarget();
+    const techUrl = targetId ? `/api/technologies?target_id=${targetId}` : "/api/technologies";
+    const subUrl = targetId ? `/api/urls/subdomains?target_id=${targetId}` : "/api/urls/subdomains";
+
+    // Load Technologies
+    try {
+      const resp = await fetch(techUrl);
+      const json = await resp.json();
+      const container = document.getElementById("tech-list");
+      if (json.success && json.data.length > 0) {
+        container.innerHTML = json.data.map(t => `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; background:var(--bg-tertiary); border-radius:var(--radius-sm);">
+            <div>
+              <span style="font-weight:600; color:var(--text-primary);">${t.name}</span>
+              <span class="chip" style="margin-left:6px; font-size:10px;">${t.category}</span>
+            </div>
+            <span class="chip chip-tech">${t.count} endpoints</span>
+          </div>
+        `).join("");
+      } else {
+        container.innerHTML = '<div style="color:var(--text-muted); padding:10px;">No technologies detected yet.</div>';
+      }
+    } catch(e) {
+      console.error(e);
+    }
+
+    // Load Subdomains
+    try {
+      const resp = await fetch(subUrl);
+      const json = await resp.json();
+      const container = document.getElementById("subdomains-list");
+      if (json.success && json.data.length > 0) {
+        container.innerHTML = json.data.map(s => `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; background:var(--bg-tertiary); border-radius:var(--radius-sm);">
+            <div>
+              <a href="/urls?hostname=${encodeURIComponent(s.hostname)}" style="font-weight:600; font-family:var(--font-mono); color:var(--accent-blue); text-decoration:none;">${s.hostname}</a>
+              <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">
+                ${s.technologies.slice(0, 3).join(", ") || "No tech identified"}
+              </div>
+            </div>
+            <span class="chip">${s.url_count} URLs</span>
+          </div>
+        `).join("");
+      } else {
+        container.innerHTML = '<div style="color:var(--text-muted); padding:10px;">No subdomains discovered yet.</div>';
+      }
+    } catch(e) {
+      console.error(e);
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    loadTechAndSubdomains();
+    window.addEventListener("targetChanged", () => loadTechAndSubdomains());
+  });
+</script>
+{% endblock %}

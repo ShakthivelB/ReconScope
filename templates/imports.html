@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Import Recon - ReconScope{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Recon Ingestion Pipeline</h1>
+    <div class="page-subtitle">Upload reconnaissance files or paste raw discovered endpoints</div>
+  </div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; align-items: start;">
+  <!-- Ingestion Form -->
+  <div class="url-card">
+    <div style="font-size: 16px; font-weight: 700; margin-bottom: 12px;">📥 Upload Discovery Output</div>
+    <form id="import-form">
+      <div class="form-group">
+        <label class="form-label" for="import-target-select">Associate with Target *</label>
+        <select id="import-target-select" name="target_id" class="form-select" required>
+          <option value="">Loading targets...</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="import-source">Discovery Source *</label>
+        <select id="import-source" name="source_type" class="form-select">
+          <option value="Manual">Manual / Mixed</option>
+          <option value="GAU">GAU (getAllUrls)</option>
+          <option value="Katana">Katana Crawler</option>
+          <option value="Wayback">Waybackurls</option>
+          <option value="Subfinder">Subfinder</option>
+          <option value="Amass">Amass</option>
+          <option value="Httpx">HTTPX</option>
+        </select>
+      </div>
+
+      <!-- Drag & Drop Area -->
+      <div class="form-group">
+        <label class="form-label">Upload Files (.txt, .csv, .json)</label>
+        <div id="drop-zone" style="border: 2px dashed var(--border-color); border-radius: var(--radius-md); padding: 24px; text-align: center; cursor: pointer; transition: all var(--transition-fast);">
+          <div style="font-size: 24px; margin-bottom: 6px;">📂</div>
+          <div id="drop-zone-text" style="font-size: 13px; color: var(--text-secondary);">
+            Drag and drop files here or <span style="color:var(--accent-blue); text-decoration:underline;">browse</span>
+          </div>
+          <input type="file" id="import-files" name="files" multiple accept=".txt,.csv,.json,.jsonl" style="display:none;" />
+        </div>
+      </div>
+
+      <!-- Paste Text Option -->
+      <div class="form-group">
+        <label class="form-label" for="import-raw-text">Or Paste Endpoints Directly</label>
+        <textarea id="import-raw-text" name="raw_text" class="form-textarea" placeholder="https://example.com/api/v1&#10;https://sub.example.com/login&#10;api.example.com"></textarea>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width: 100%;">Start Import & Deduplication</button>
+    </form>
+
+    <div id="import-summary-box" style="display:none; margin-top: 16px;"></div>
+  </div>
+
+  <!-- Import History -->
+  <div>
+    <div style="font-size: 16px; font-weight: 700; margin-bottom: 12px;">Past Ingestions</div>
+    <div id="import-history-list" style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="color:var(--text-muted); padding:20px;">Loading history...</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/imports.js"></script>
+<script>
+  document.getElementById("drop-zone").addEventListener("click", () => {
+    document.getElementById("import-files").click();
+  });
+</script>
+{% endblock %}

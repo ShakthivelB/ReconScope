@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - ReconScope{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Settings & System Invariants</h1>
+    <div class="page-subtitle">Security parameters and SSRF enforcement details</div>
+  </div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; align-items: start;">
+  <!-- Security & Architecture Invariants -->
+  <div class="url-card">
+    <div style="font-size: 16px; font-weight: 700; margin-bottom: 8px;">🛡️ Security & Boundary Status</div>
+    <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 14px;">
+      Enforced safeguards for authorized reconnaissance testing:
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 8px; font-size: 12px;">
+      <div style="padding: 8px; background: var(--bg-tertiary); border-radius: var(--radius-sm);">
+        <strong style="color: var(--accent-green);">✓ Zero Screenshot Persistence</strong>
+        <div style="color: var(--text-muted); margin-top: 2px;">Previews are captured strictly into memory and streamed directly; no images are saved to disk or database.</div>
+      </div>
+
+      <div style="padding: 8px; background: var(--bg-tertiary); border-radius: var(--radius-sm);">
+        <strong style="color: var(--accent-green);">✓ Strict SSRF Shielding</strong>
+        <div style="color: var(--text-muted); margin-top: 2px;">Blocks 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, and link-local IPv6. Re-validated on every redirect hop.</div>
+      </div>
+
+      <div style="padding: 8px; background: var(--bg-tertiary); border-radius: var(--radius-sm);">
+        <strong style="color: var(--accent-green);">✓ Local Binding Only</strong>
+        <div style="color: var(--text-muted); margin-top: 2px;">Default binding to 127.0.0.1:8000; no external cloud dependencies or third-party tracking.</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - ReconScope{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Reconnaissance Intelligence</h1>
+    <div class="page-subtitle">High-level triage overview and attack-surface distribution</div>
+  </div>
+  <div style="display:flex; gap:8px;">
+    <a href="/urls" class="btn btn-sm btn-secondary">Explore URLs</a>
+    <a href="/imports" class="btn btn-sm btn-primary">Import Data</a>
+  </div>
+</div>
+
+<!-- Key Metrics Grid -->
+<div class="metrics-grid">
+  <div class="metric-card">
+    <span class="metric-label">Total URLs</span>
+    <span class="metric-val" id="stat-total-urls">-</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">Checked</span>
+    <span class="metric-val" id="stat-checked">-</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">Not Checked</span>
+    <span class="metric-val" id="stat-not-checked">-</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">2xx</span>
+    <span class="metric-val metric-200" id="stat-200">-</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">3xx Redirects</span>
+    <span class="metric-val metric-3xx" id="stat-3xx">-</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">401 Auth</span>
+    <span class="metric-val metric-401" id="stat-401">-</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">403 Forbidden</span>
+    <span class="metric-val metric-403" id="stat-403">-</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">404 Not Found</span>
+    <span class="metric-val metric-404" id="stat-404">-</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">5xx Errors</span>
+    <span class="metric-val metric-5xx" id="stat-5xx">-</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">Timeouts</span>
+    <span class="metric-val" style="color:var(--text-muted);" id="stat-timeouts">-</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">Errors</span>
+    <span class="metric-val" style="color:var(--text-muted);" id="stat-errors">-</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">⭐ Interesting</span>
+    <span class="metric-val metric-interesting" id="stat-interesting">-</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">Subdomains</span>
+    <span class="metric-val" id="stat-subdomains">-</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">Technologies</span>
+    <span class="metric-val" id="stat-technologies">-</span>
+  </div>
+</div>
+
+<!-- Charts & Distributions Grid -->
+<div class="charts-grid">
+  <!-- Status Distribution -->
+  <div class="chart-card">
+    <div class="chart-card-title">
+      <span>HTTP Status Distribution</span>
+      <span style="font-size:11px; color:var(--text-muted);">Alive Codes</span>
+    </div>
+    <div id="chart-status-bars">
+      <div style="color:var(--text-muted); font-size:12px;">Loading statistics...</div>
+    </div>
+  </div>
+
+  <!-- Sources Breakdown -->
+  <div class="chart-card">
+    <div class="chart-card-title">
+      <span>Discovery Sources</span>
+      <span style="font-size:11px; color:var(--text-muted);">Ingestion Pipeline</span>
+    </div>
+    <div id="chart-sources-bars">
+      <div style="color:var(--text-muted); font-size:12px;">Loading statistics...</div>
+    </div>
+  </div>
+
+  <!-- Top Technologies -->
+  <div class="chart-card">
+    <div class="chart-card-title">
+      <span>Detected Technologies</span>
+      <span style="font-size:11px; color:var(--text-muted);">Signatures</span>
+    </div>
+    <div id="chart-tech-bars">
+      <div style="color:var(--text-muted); font-size:12px;">Loading statistics...</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/dashboard.js"></script>
+{% endblock %}

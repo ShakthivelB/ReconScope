@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}ReconScope{% endblock %} - Recon Analyst Workstation</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <div class="app-container">
+    <!-- Desktop & Mobile Drawer Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="brand-icon">🛡️</span>
+        <span class="brand-title">ReconScope</span>
+        <span class="brand-badge">Local</span>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a href="/dashboard" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
+          <span class="nav-icon">📊</span>
+          <span>Dashboard</span>
+        </a>
+        <a href="/targets" class="nav-item {% if active_page == 'targets' %}active{% endif %}">
+          <span class="nav-icon">🎯</span>
+          <span>Targets</span>
+        </a>
+        <a href="/imports" class="nav-item {% if active_page == 'imports' %}active{% endif %}">
+          <span class="nav-icon">📥</span>
+          <span>Import Recon</span>
+        </a>
+        <a href="/urls" class="nav-item {% if active_page == 'urls' %}active{% endif %}">
+          <span class="nav-icon">🔍</span>
+          <span>URL Explorer</span>
+        </a>
+        <a href="/technologies" class="nav-item {% if active_page == 'technologies' %}active{% endif %}">
+          <span class="nav-icon">🧩</span>
+          <span>Technologies</span>
+        </a>
+        <a href="/settings" class="nav-item {% if active_page == 'settings' %}active{% endif %}">
+          <span class="nav-icon">⚙️</span>
+          <span>Settings</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div>ReconScope v1.0.0</div>
+        <div style="font-size: 11px; margin-top: 2px;">Local-First Security Triage</div>
+      </div>
+    </aside>
+
+    <!-- Main Working Area -->
+    <div class="main-area">
+      <!-- Topbar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button id="mobile-menu-toggle" class="mobile-menu-btn" aria-label="Toggle navigation menu">☰</button>
+          <div class="target-selector-wrap">
+            <span style="font-size: 12px; color: var(--text-secondary); font-weight: 600;">SCOPE:</span>
+            <select id="global-target-select" class="target-select" aria-label="Select active target">
+              <option value="">All Targets</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <a href="/imports" class="btn btn-sm btn-primary">+ Import URLs</a>
+          <button id="check-urls-btn" class="btn btn-sm btn-secondary" type="button">⚡ Check URLs</button>
+        </div>
+      </header>
+
+      <!-- Main Page Content -->
+      <main class="content-container">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <section id="global-scan-widget" class="global-scan-widget" aria-live="polite">
+    <div class="scan-widget-header">
+      <span id="scan-widget-title">Checking URLs...</span>
+      <button id="scan-widget-close" class="scan-widget-close" type="button" aria-label="Close scan progress">×</button>
+    </div>
+    <div id="scan-widget-progress">Starting HTTP checks…</div>
+    <div class="scan-widget-stats" id="scan-widget-stats"></div>
+  </section>
+
+  <!-- Shared Scripts -->
+  <script src="/static/js/app.js"></script>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

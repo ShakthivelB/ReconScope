@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}URL Explorer - ReconScope{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">URL Explorer & Triage</h1>
+    <div class="page-subtitle">Inspect discovered attack surface, filter responses, and preview endpoints</div>
+  </div>
+  <div id="url-results-count" style="font-size: 13px; color: var(--text-secondary); font-family: var(--font-mono);">
+    Loading endpoints...
+  </div>
+</div>
+
+<!-- Search & Filtering Bar -->
+<div class="filter-bar">
+  <div class="filter-row-top">
+    <div class="search-input-wrap">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="url-search-input" class="form-input" placeholder="Search URLs... e.g. api !/auth" />
+    </div>
+
+    <div style="display:flex; gap:8px;">
+      <select id="url-search-field" class="form-select" aria-label="Search in field" style="width:130px; min-width:130px;">
+        <option value="all">Search in: All</option>
+        <option value="url">Search in: URL</option>
+        <option value="host">Search in: Host</option>
+        <option value="path">Search in: Path</option>
+        <option value="query">Search in: Query</option>
+        <option value="title">Search in: Title</option>
+        <option value="technology">Search in: Technology</option>
+      </select>
+      <select id="sort-select" class="form-select" style="min-width: 140px;" aria-label="Sort endpoints by">
+        <option value="newest">Sort: Newest</option>
+        <option value="oldest">Sort: Oldest</option>
+        <option value="status">Sort: HTTP Status</option>
+        <option value="response_time">Sort: Response Time</option>
+        <option value="response_size">Sort: Response Size</option>
+        <option value="hostname">Sort: Hostname</option>
+        <option value="path">Sort: Path</option>
+      </select>
+
+      <select id="limit-select" class="form-select" style="width: 90px;" aria-label="Items per page">
+        <option value="25">25 / p</option>
+        <option value="50" selected>50 / p</option>
+        <option value="100">100 / p</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="filter-row-top" style="align-items:center;">
+    <label for="url-search-regex" style="display:flex; align-items:center; gap:7px; min-height:40px; font-size:12px; color:var(--text-secondary); cursor:pointer;">
+      <input id="url-search-regex" type="checkbox" /> Regex
+    </label>
+    <span style="font-size:11px; color:var(--text-muted);">Terms are combined with AND; prefix a term with <code>!</code> to exclude it. Regex example: choose Path and enter <code>^/api/ !^/api/internal/</code></span>
+    <span id="url-search-error" role="alert" aria-live="polite" style="color:var(--accent-red); font-size:12px;"></span>
+  </div>
+
+  <!-- Status Filter Pills -->
+  <div class="filter-pills">
+    <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">STATUS:</span>
+    <button class="pill-btn status-filter-btn active" data-status="">All</button>
+    <button class="pill-btn status-filter-btn" data-status="not_checked">○ Not Checked</button>
+    <button class="pill-btn status-filter-btn" data-status="2xx">🟢 2xx</button>
+    <button class="pill-btn status-filter-btn" data-status="3xx">🟡 3xx</button>
+    <button class="pill-btn status-filter-btn" data-status="401">🟣 401</button>
+    <button class="pill-btn status-filter-btn" data-status="403">🟠 403</button>
+    <button class="pill-btn status-filter-btn" data-status="404">🔴 404</button>
+    <button class="pill-btn status-filter-btn" data-status="5xx">🔴 5xx</button>
+    <button class="pill-btn status-filter-btn" data-status="timeout">⚫ Timeout</button>
+
+    <div style="margin-left: auto;">
+      <button id="filter-pinned-btn" class="pill-btn" aria-pressed="false">
+        📌 Pinned Only
+      </button>
+      <button id="filter-interesting-btn" class="pill-btn" style="border-color: rgba(241, 224, 90, 0.4);">
+        ⭐ Interesting Only
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- URL Cards Stream -->
+<div id="urls-container" class="url-cards-grid">
+  <!-- Dynamic cards inserted by urls.js -->
+</div>
+
+<!-- Server-side Pagination -->
+<div id="pagination-container"></div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/urls.js"></script>
+{% endblock %}
