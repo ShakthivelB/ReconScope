@@ -56,6 +56,21 @@ class ReconImport(Base):
     created_at = Column(DateTime, default=utcnow, nullable=False)
 
     target = relationship("Target", back_populates="recon_imports")
+    url_links = relationship("ImportUrl", back_populates="recon_import", cascade="all, delete-orphan")
+
+
+class ImportUrl(Base):
+    """Explicit URL ownership links for each uploaded import."""
+    __tablename__ = "import_urls"
+
+    id = Column(Integer, primary_key=True, index=True)
+    import_id = Column(Integer, ForeignKey("recon_imports.id", ondelete="CASCADE"), nullable=False, index=True)
+    url_id = Column(Integer, ForeignKey("urls.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    recon_import = relationship("ReconImport", back_populates="url_links")
+    url = relationship("Url", back_populates="import_links")
+
+    __table_args__ = (Index("ix_import_urls_pair", "import_id", "url_id", unique=True),)
 
 
 class Url(Base):
@@ -72,6 +87,7 @@ class Url(Base):
     query = Column(Text, default="", nullable=False)
     sources = Column(String(255), default="Manual", nullable=False)  # Comma-separated (e.g. "GAU, Katana")
     is_pinned = Column(Boolean, default=False, server_default="0", nullable=False)
+    import_tracking_complete = Column(Boolean, default=False, server_default="0", nullable=False)
     is_interesting = Column(Boolean, default=False, nullable=False, index=True)
     interesting_reasons = Column(Text, default="", nullable=False)
     first_seen = Column(DateTime, default=utcnow, nullable=False, index=True)
@@ -80,6 +96,8 @@ class Url(Base):
     target = relationship("Target", back_populates="urls")
     http_results = relationship("HttpResult", back_populates="url", cascade="all, delete-orphan", order_by="desc(HttpResult.probed_at)")
     url_technologies = relationship("UrlTechnology", back_populates="url", cascade="all, delete-orphan")
+    import_links = relationship("ImportUrl", back_populates="url", cascade="all, delete-orphan")
+    scan_job_links = relationship("ScanJobUrl", back_populates="url", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_urls_target_normalized", "target_id", "normalized_url"),
@@ -162,6 +180,21 @@ class ScanJob(Base):
 
     target = relationship("Target", back_populates="scan_jobs")
     scan_results = relationship("ScanResult", back_populates="scan_job", cascade="all, delete-orphan")
+    url_links = relationship("ScanJobUrl", back_populates="scan_job", cascade="all, delete-orphan")
+
+
+class ScanJobUrl(Base):
+    """Persist the URL membership snapshot for a scan, including queued URLs."""
+    __tablename__ = "scan_job_urls"
+
+    id = Column(Integer, primary_key=True, index=True)
+    scan_job_id = Column(Integer, ForeignKey("scan_jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    url_id = Column(Integer, ForeignKey("urls.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    scan_job = relationship("ScanJob", back_populates="url_links")
+    url = relationship("Url", back_populates="scan_job_links")
+
+    __table_args__ = (Index("ix_scan_job_urls_pair", "scan_job_id", "url_id", unique=True),)
 
 
 class ScanResult(Base):

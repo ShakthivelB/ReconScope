@@ -15,7 +15,10 @@ from sqlalchemy.orm import Session
 from database.database import SessionLocal
 from database.models import (
     HttpResult,
+    ImportUrl,
+    ReconImport,
     ScanJob,
+    ScanJobUrl,
     ScanResult,
     Technology,
     Url,
@@ -257,12 +260,23 @@ async def run_scan_job(
             logger.error(f"ScanJob {scan_job_id} not found.")
             return
 
-        query = db.query(Url.id, Url.normalized_url)
+        query = (
+            db.query(Url.id, Url.normalized_url)
+            .join(ScanJobUrl, ScanJobUrl.url_id == Url.id)
+            .join(ImportUrl, ImportUrl.url_id == Url.id)
+            .join(ReconImport, ReconImport.id == ImportUrl.import_id)
+            .filter(ScanJobUrl.scan_job_id == scan_job_id)
+        )
         if scan_job.target_id is not None:
             query = query.filter(Url.target_id == scan_job.target_id)
-        url_records = query.all()
+        url_records = query.distinct().all()
         total_urls = len(url_records)
         scan_job.total_urls = total_urls
+        if not total_urls:
+            scan_job.status = "cancelled"
+            scan_job.finished_at = datetime.now(timezone.utc)
+            db.commit()
+            return
         scan_job.status = "running"
         scan_job.started_at = datetime.now(timezone.utc)
         db.commit()
@@ -274,10 +288,7 @@ async def run_scan_job(
             queue.put_nowait(record)
 
         db_lock = asyncio.Lock()
-        completed_counter = 0
-
         async def worker():
-            nonlocal completed_counter
             while not queue.empty():
                 state = ACTIVE_SCANS.get(scan_job_id, {}).get("status", "running")
                 while state == "paused":
@@ -291,6 +302,27 @@ async def run_scan_job(
                     u_id, u_norm = queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
+
+                # A queued URL may have lost its last active import after this
+                # worker loaded the queue. Recheck ownership before probing.
+                ownership_db = SessionLocal()
+                try:
+                    still_active = (
+                        ownership_db.query(ScanJobUrl.id)
+                        .join(Url, Url.id == ScanJobUrl.url_id)
+                        .join(ImportUrl, ImportUrl.url_id == Url.id)
+                        .join(ReconImport, ReconImport.id == ImportUrl.import_id)
+                        .filter(
+                            ScanJobUrl.scan_job_id == scan_job_id,
+                            ScanJobUrl.url_id == u_id,
+                        )
+                        .first()
+                    )
+                finally:
+                    ownership_db.close()
+                if not still_active:
+                    queue.task_done()
+                    continue
 
                 # Probe URL
                 try:
@@ -328,11 +360,20 @@ async def run_scan_job(
                     job_db = SessionLocal()
                     try:
                         job = job_db.query(ScanJob).filter(ScanJob.id == scan_job_id).first()
-                        if not job:
+                        still_active = (
+                            job_db.query(ScanJobUrl.id)
+                            .join(ImportUrl, ImportUrl.url_id == ScanJobUrl.url_id)
+                            .join(ReconImport, ReconImport.id == ImportUrl.import_id)
+                            .filter(
+                                ScanJobUrl.scan_job_id == scan_job_id,
+                                ScanJobUrl.url_id == u_id,
+                            )
+                            .first()
+                        )
+                        if not job or not still_active:
                             continue
 
-                        completed_counter += 1
-                        job.completed_urls = completed_counter
+                        job.completed_urls += 1
                         status_code = res.get("status_code")
                         error_msg = res.get("error")
 

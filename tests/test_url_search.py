@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from api.urls import _bounded_regex_matches, _validate_regex, list_urls, parse_search_query
 from database.database import Base
-from database.models import HttpResult, Target, Technology, Url, UrlTechnology
+from database.models import HttpResult, ImportUrl, ReconImport, Target, Technology, Url, UrlTechnology
 
 
 @pytest.fixture
@@ -19,6 +19,9 @@ def search_db():
     db = sessionmaker(autoflush=False, bind=engine)()
     target = Target(name="Search fixture", root_domain="example.test")
     db.add(target)
+    db.flush()
+    source = ReconImport(target_id=target.id, filename="search.txt", source_type="Manual")
+    db.add(source)
     db.flush()
 
     rows = [
@@ -58,6 +61,7 @@ def search_db():
         )
         db.add(url)
         db.flush()
+        db.add(ImportUrl(import_id=source.id, url_id=url.id))
         created.append(url)
         db.add(HttpResult(url_id=url.id, status_code=status, title=title))
         for tech_name in tech_names:

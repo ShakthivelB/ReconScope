@@ -6,7 +6,7 @@ from sqlalchemy.pool import StaticPool
 
 from api.dashboard import get_dashboard_stats
 from database.database import Base
-from database.models import HttpResult, Technology, Url, UrlTechnology
+from database.models import HttpResult, ImportUrl, ReconImport, Technology, Url, UrlTechnology
 
 
 def make_session():
@@ -32,6 +32,10 @@ def test_dashboard_stats_include_targetless_urls_and_actual_probe_data():
         )
         db.add_all([ok_url, timeout_url])
         db.flush()
+        source = ReconImport(filename="fixture.txt", source_type="Manual")
+        db.add(source)
+        db.flush()
+        db.add_all([ImportUrl(import_id=source.id, url_id=ok_url.id), ImportUrl(import_id=source.id, url_id=timeout_url.id)])
         db.add_all([
             HttpResult(url_id=ok_url.id, status_code=200, response_time_ms=25),
             HttpResult(url_id=timeout_url.id, status_code=None, error_message="Timeout"),

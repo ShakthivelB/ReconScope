@@ -5,12 +5,16 @@
 const DashboardModule = {
   refreshTimer: null,
   requestInFlight: false,
+  refreshPending: false,
   hasLoaded: false,
 
   init() {
     document.getElementById("dashboard-retry")?.addEventListener("click", () => this.loadStats());
     window.addEventListener("scanProgress", () => this.scheduleRefresh());
     window.addEventListener("scanUpdated", () => this.scheduleRefresh());
+    window.addEventListener("storage", (event) => {
+      if (event.key === "reconscope_data_changed") this.loadStats();
+    });
     this.loadStats();
   },
 
@@ -23,7 +27,10 @@ const DashboardModule = {
   },
 
   async loadStats() {
-    if (this.requestInFlight) return;
+    if (this.requestInFlight) {
+      this.refreshPending = true;
+      return;
+    }
     this.requestInFlight = true;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
@@ -33,7 +40,7 @@ const DashboardModule = {
     if (retryButton) retryButton.disabled = true;
 
     try {
-      const resp = await fetch("/api/dashboard/stats", { signal: controller.signal });
+      const resp = await fetch("/api/dashboard/stats", { signal: controller.signal, cache: "no-store" });
       const json = await resp.json();
       if (!resp.ok || !json.success) throw new Error(json.error?.message || `Dashboard request failed (${resp.status})`);
 
@@ -86,6 +93,10 @@ const DashboardModule = {
       clearTimeout(timeout);
       this.requestInFlight = false;
       if (retryButton) retryButton.disabled = false;
+      if (this.refreshPending) {
+        this.refreshPending = false;
+        this.scheduleRefresh();
+      }
     }
   },
 

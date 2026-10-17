@@ -8,7 +8,7 @@ from starlette.responses import Response
 from playwright.async_api import Error as PlaywrightError
 
 from database.database import Base
-from database.models import HttpResult, Target, Url
+from database.models import HttpResult, ImportUrl, ReconImport, Target, Url
 from services import browser_preview
 
 
@@ -341,6 +341,10 @@ def test_preview_metadata_endpoint_headers(monkeypatch):
     )
     db.add(url)
     db.flush()
+    source = ReconImport(filename="fixture.txt", source_type="Manual")
+    db.add(source)
+    db.flush()
+    db.add(ImportUrl(import_id=source.id, url_id=url.id))
     db.add(HttpResult(url_id=url.id, status_code=200, content_type="application/json"))
     db.commit()
 
@@ -409,6 +413,11 @@ def test_preview_endpoint_accepts_url_without_target(monkeypatch):
         path="/app.js",
     )
     db.add(url)
+    db.flush()
+    source = ReconImport(filename="fixture.txt", source_type="Manual")
+    db.add(source)
+    db.flush()
+    db.add(ImportUrl(import_id=source.id, url_id=url.id))
     db.commit()
     received = {}
 
@@ -460,6 +469,10 @@ def test_preview_timeout_returns_gateway_timeout_without_changing_http_result(mo
     )
     db.add(url)
     db.flush()
+    source = ReconImport(filename="fixture.txt", source_type="Manual")
+    db.add(source)
+    db.flush()
+    db.add(ImportUrl(import_id=source.id, url_id=url.id))
     db.add(HttpResult(url_id=url.id, status_code=200, content_type="application/json"))
     db.commit()
 

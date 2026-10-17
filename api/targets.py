@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from database.database import get_db
-from database.models import Target, Url, ReconImport, ScanJob
+from database.models import ImportUrl, Target, Url, ReconImport, ScanJob
 from . import success_response, error_response
 
 router = APIRouter(prefix="/api/targets", tags=["Targets"])
@@ -28,7 +28,10 @@ def list_targets(db: Session = Depends(get_db)):
     targets = db.query(Target).order_by(Target.created_at.desc()).all()
     results = []
     for t in targets:
-        url_count = db.query(Url).filter(Url.target_id == t.id).count()
+        url_count = db.query(Url).filter(
+            Url.target_id == t.id,
+            Url.import_links.any(ImportUrl.recon_import.has(ReconImport.id.is_not(None))),
+        ).count()
         import_count = db.query(ReconImport).filter(ReconImport.target_id == t.id).count()
         scan_count = db.query(ScanJob).filter(ScanJob.target_id == t.id).count()
         results.append({
@@ -82,7 +85,10 @@ def get_target(target_id: int, db: Session = Depends(get_db)):
     if not target:
         return error_response("NOT_FOUND", "Target not found", status_code=404)
 
-    url_count = db.query(Url).filter(Url.target_id == target.id).count()
+    url_count = db.query(Url).filter(
+        Url.target_id == target.id,
+        Url.import_links.any(ImportUrl.recon_import.has(ReconImport.id.is_not(None))),
+    ).count()
     return success_response({
         "id": target.id,
         "name": target.name,

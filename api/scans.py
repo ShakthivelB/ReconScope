@@ -6,7 +6,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from database.database import get_db
-from database.models import ScanJob, ScanResult, Target, Url
+from database.models import ImportUrl, ReconImport, ScanJob, ScanJobUrl, ScanResult, Target, Url
 from services.http_probe import ACTIVE_SCANS, run_scan_job
 from . import error_response, success_response
 
@@ -21,7 +21,7 @@ class ScanCreateSchema(BaseModel):
 
 @router.get("")
 def list_scans(target_id: Optional[int] = None, db: Session = Depends(get_db)):
-    query = db.query(ScanJob)
+    query = db.query(ScanJob).filter(ScanJob.url_links.any(ScanJobUrl.url.has(Url.import_links.any(ImportUrl.recon_import.has(ReconImport.id.is_not(None))))))
     if target_id:
         query = query.filter(ScanJob.target_id == target_id)
 
@@ -52,7 +52,10 @@ def list_scans(target_id: Optional[int] = None, db: Session = Depends(get_db)):
 @router.get("/active")
 def get_active_scan(target_id: Optional[int] = None, db: Session = Depends(get_db)):
     """Returns currently running or queued scan job if any."""
-    query = db.query(ScanJob).filter(ScanJob.status.in_(["running", "queued", "paused"]))
+    query = db.query(ScanJob).filter(
+        ScanJob.status.in_(["running", "queued", "paused"]),
+        ScanJob.url_links.any(ScanJobUrl.url.has(Url.import_links.any(ImportUrl.recon_import.has(ReconImport.id.is_not(None))))),
+    )
     if target_id:
         query = query.filter(or_(ScanJob.target_id == target_id, ScanJob.target_id.is_(None)))
     scan = query.order_by(ScanJob.created_at.desc()).first()
@@ -86,14 +89,18 @@ def start_scan(payload: ScanCreateSchema, background_tasks: BackgroundTasks, db:
     if payload.target_id is not None and not target:
         return error_response("NOT_FOUND", "Target not found", status_code=404)
 
-    url_query = db.query(Url)
+    url_query = db.query(Url).join(ImportUrl).join(ReconImport).distinct()
     if payload.target_id is not None:
         url_query = url_query.filter(Url.target_id == payload.target_id)
-    url_count = url_query.count()
-    if url_count == 0:
+    scan_urls = url_query.order_by(Url.id.asc()).all()
+    url_count = len(scan_urls)
+    if not url_count:
         return error_response("NO_URLS", "No URLs are available to scan. Please import URLs first.", status_code=400)
 
-    active_query = db.query(ScanJob).filter(ScanJob.status.in_(["running", "queued", "paused"]))
+    active_query = db.query(ScanJob).filter(
+        ScanJob.status.in_(["running", "queued", "paused"]),
+        ScanJob.url_links.any(ScanJobUrl.url.has(Url.import_links.any(ImportUrl.recon_import.has(ReconImport.id.is_not(None))))),
+    )
     if payload.target_id is not None:
         active_query = active_query.filter(
             or_(ScanJob.target_id == payload.target_id, ScanJob.target_id.is_(None))
@@ -115,6 +122,8 @@ def start_scan(payload: ScanCreateSchema, background_tasks: BackgroundTasks, db:
         created_at=datetime.now(timezone.utc),
     )
     db.add(scan_job)
+    db.flush()
+    db.add_all(ScanJobUrl(scan_job_id=scan_job.id, url_id=url.id) for url in scan_urls)
     db.commit()
     db.refresh(scan_job)
 
@@ -188,7 +197,7 @@ def compare_scans(
 
 @router.get("/{scan_id}")
 def get_scan(scan_id: int, db: Session = Depends(get_db)):
-    s = db.query(ScanJob).filter(ScanJob.id == scan_id).first()
+    s = db.query(ScanJob).filter(ScanJob.id == scan_id, ScanJob.url_links.any(ScanJobUrl.url.has(Url.import_links.any(ImportUrl.recon_import.has(ReconImport.id.is_not(None)))))).first()
     if not s:
         return error_response("NOT_FOUND", "Scan job not found", status_code=404)
 

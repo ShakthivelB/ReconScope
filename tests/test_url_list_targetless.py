@@ -6,7 +6,7 @@ from sqlalchemy.pool import StaticPool
 
 from api.urls import list_urls
 from database.database import Base
-from database.models import Target, Url
+from database.models import ImportUrl, ReconImport, Target, Url
 
 
 def call_list_urls(db):
@@ -41,6 +41,11 @@ def test_url_list_without_target_includes_legacy_and_targetless_records():
                 hostname="other.example", path="/b",
             ),
         ])
+        db.flush()
+        source = ReconImport(filename="fixture.txt", source_type="Manual")
+        db.add(source)
+        db.flush()
+        db.add_all([ImportUrl(import_id=source.id, url_id=url.id) for url in db.query(Url).all()])
         db.commit()
 
         response = call_list_urls(db)

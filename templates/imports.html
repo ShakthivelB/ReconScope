@@ -60,10 +60,21 @@
     </div>
   </div>
 </div>
+
+<dialog id="import-delete-dialog" aria-labelledby="import-delete-heading" style="width:min(520px,calc(100% - 32px)); color:var(--text-primary); background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:24px; box-shadow:0 20px 60px rgba(0,0,0,.5);">
+  <h2 id="import-delete-heading" style="margin:0 0 12px;">Delete Imported Source?</h2>
+  <div id="import-delete-title" style="font-weight:600; margin-bottom:10px;"></div>
+  <p id="import-delete-details" style="color:var(--text-secondary); line-height:1.5;">Checking source data…</p>
+  <p style="color:var(--accent-red); font-size:13px;">This action cannot be undone.</p>
+  <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px;">
+    <button id="import-delete-cancel" type="button" class="btn btn-secondary">Cancel</button>
+    <button id="import-delete-confirm" type="button" class="btn btn-danger" disabled>Delete Everything</button>
+  </div>
+</dialog>
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="/static/js/imports.js?v=import-delete-1"></script>
+<script src="/static/js/imports.js?v=import-delete-2"></script>
 <script>
   document.getElementById("drop-zone").addEventListener("click", () => {
     document.getElementById("import-files").click();

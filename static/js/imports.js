@@ -22,9 +22,19 @@ const ImportsModule = {
       historyList.addEventListener("click", async (event) => {
         const button = event.target.closest("[data-delete-import]");
         if (!button) return;
-        await this.deleteImport(button.dataset.deleteImport, button.dataset.filename || "this import");
+        await this.openDeleteDialog(button.dataset.deleteImport, button.dataset.filename || "this import");
       });
     }
+
+    const dialog = document.getElementById("import-delete-dialog");
+    dialog?.addEventListener("click", (event) => {
+      if (event.target === dialog && !this.deletingImport) dialog.close();
+    });
+    dialog?.addEventListener("cancel", (event) => {
+      if (this.deletingImport) event.preventDefault();
+    });
+    document.getElementById("import-delete-cancel")?.addEventListener("click", () => dialog?.close());
+    document.getElementById("import-delete-confirm")?.addEventListener("click", () => this.confirmDelete());
 
     // Drag and drop support
     const dropZone = document.getElementById("drop-zone");
@@ -137,7 +147,7 @@ const ImportsModule = {
             <span class="chip" style="color:var(--accent-green);">+${imp.new_count} New</span>
             <span class="chip" style="color:var(--text-muted);">${imp.duplicate_count} Dupes</span>
             <span class="chip">📅 ${new Date(imp.created_at).toLocaleString()}</span>
-            <button type="button" class="btn btn-sm btn-secondary" data-delete-import="${imp.id}" data-filename="${this.escapeHtml(imp.filename)}">Delete import record</button>
+            <button type="button" class="btn btn-sm btn-danger" data-delete-import="${imp.id}" data-filename="${this.escapeHtml(imp.filename)}" aria-label="Delete imported source ${this.escapeHtml(imp.filename)}">Delete</button>
           </div>
         </div>
       `).join("");
@@ -152,22 +162,54 @@ const ImportsModule = {
     }[char]));
   },
 
-  async deleteImport(importId, filename) {
-    const confirmed = window.confirm(
-      `Delete the import history record for “${filename}”? This removes only this history entry. URLs, scan results, pins, and other imports will be preserved. Uploaded files are not stored by ReconScope.`
-    );
-    if (!confirmed) return;
-
+  deletingImport: false,
+  async openDeleteDialog(importId, filename) {
+    this.pendingDeleteId = importId;
+    const dialog = document.getElementById("import-delete-dialog");
+    const confirm = document.getElementById("import-delete-confirm");
+    const detail = document.getElementById("import-delete-details");
+    document.getElementById("import-delete-title").textContent = `Delete “${filename}”?`;
+    detail.textContent = "Checking which URLs belong exclusively to this source…";
+    confirm.disabled = true;
+    dialog.showModal();
     try {
-      const response = await fetch(`/api/imports/${encodeURIComponent(importId)}`, { method: "DELETE" });
+      const response = await fetch(`/api/imports/${encodeURIComponent(importId)}/deletion-preview`);
       const result = await response.json();
-      if (!response.ok || !result.success) {
-        throw new Error(result.error?.message || "Could not delete the import record");
-      }
-      ReconApp.showToast(`Deleted import history for ${filename}. URLs and scan data were preserved.`, "success");
+      if (!response.ok || !result.success) throw new Error(result.error?.message || "Could not inspect this source");
+      const preview = result.data;
+      detail.textContent = `${preview.exclusive_urls} exclusive URL(s), including their HTTP results, technology links, and scan results, will be deleted. ${preview.shared_urls} shared URL(s) will remain. The original uploaded file is not stored.`;
+      confirm.disabled = false;
+    } catch (error) {
+      detail.textContent = error.message || "Could not inspect this source. Nothing has been deleted.";
+      ReconApp.showToast(error.message, "error");
+    }
+  },
+
+  async confirmDelete() {
+    if (this.deletingImport || !this.pendingDeleteId) return;
+    const confirm = document.getElementById("import-delete-confirm");
+    const cancel = document.getElementById("import-delete-cancel");
+    this.deletingImport = true;
+    confirm.disabled = true;
+    cancel.disabled = true;
+    confirm.textContent = "Deleting…";
+    try {
+      const response = await fetch(`/api/imports/${encodeURIComponent(this.pendingDeleteId)}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.error?.message || "Could not delete the imported source");
+      const data = result.data;
+      ReconApp.showToast(`Deleted source and ${data.deleted_urls} exclusive URL(s).`, "success");
+      document.getElementById("import-delete-dialog").close();
+      localStorage.setItem("reconscope_data_changed", String(Date.now()));
       await this.loadImportHistory();
     } catch (error) {
       ReconApp.showToast(error.message, "error");
+    } finally {
+      this.deletingImport = false;
+      this.pendingDeleteId = null;
+      confirm.textContent = "Delete Everything";
+      confirm.disabled = false;
+      cancel.disabled = false;
     }
   }
 };

@@ -11,7 +11,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, joinedload
 
 from database.database import get_db
-from database.models import HttpResult, Technology, Url, UrlTechnology
+from database.models import HttpResult, ImportUrl, ReconImport, ScanJob, ScanJobUrl, ScanResult, Technology, Url, UrlTechnology
 from . import error_response, success_response
 
 router = APIRouter(prefix="/api/urls", tags=["URLs"])
@@ -225,7 +225,8 @@ def list_urls(
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Url).options(
+    active_import = Url.import_links.any(ImportUrl.recon_import.has(ReconImport.id.is_not(None)))
+    query = db.query(Url).filter(active_import).options(
         joinedload(Url.http_results),
         joinedload(Url.url_technologies).joinedload(UrlTechnology.technology),
     )
@@ -506,12 +507,13 @@ def list_urls(
 @router.get("/subdomains")
 def list_subdomains(target_id: Optional[int] = None, db: Session = Depends(get_db)):
     """Overview of discovered subdomains with URL count, status, and technologies."""
+    active_import = Url.import_links.any(ImportUrl.recon_import.has(ReconImport.id.is_not(None)))
     query = db.query(
         Url.hostname,
         func.count(Url.id).label("url_count"),
         func.min(Url.first_seen).label("first_seen"),
         func.max(Url.last_seen).label("last_seen"),
-    )
+    ).filter(active_import)
     if target_id:
         query = query.filter(Url.target_id == target_id)
 
@@ -524,14 +526,15 @@ def list_subdomains(target_id: Optional[int] = None, db: Session = Depends(get_d
             db.query(Technology.name)
             .join(UrlTechnology, Technology.id == UrlTechnology.technology_id)
             .join(Url, UrlTechnology.url_id == Url.id)
-            .filter(Url.hostname == host)
+            .filter(Url.hostname == host, Url.import_links.any(ImportUrl.recon_import.has(ReconImport.id.is_not(None))))
             .distinct()
             .all()
         )
         latest_status = (
             db.query(HttpResult.status_code)
             .join(Url, HttpResult.url_id == Url.id)
-            .filter(Url.hostname == host, HttpResult.status_code != None)
+            .filter(Url.hostname == host, HttpResult.status_code != None,
+                    Url.import_links.any(ImportUrl.recon_import.has(ReconImport.id.is_not(None))))
             .order_by(HttpResult.probed_at.desc())
             .first()
         )
@@ -550,7 +553,7 @@ def list_subdomains(target_id: Optional[int] = None, db: Session = Depends(get_d
 
 @router.put("/{url_id}/pin")
 def set_url_pin(url_id: int, pin_state: PinStateRequest, db: Session = Depends(get_db)):
-    u = db.query(Url).filter(Url.id == url_id).first()
+    u = db.query(Url).filter(Url.id == url_id, Url.import_links.any(ImportUrl.recon_import.has(ReconImport.id.is_not(None)))).first()
     if not u:
         return error_response("NOT_FOUND", "URL not found", status_code=404)
 
@@ -565,7 +568,7 @@ def get_url_details(url_id: int, db: Session = Depends(get_db)):
     u = db.query(Url).options(
         joinedload(Url.http_results),
         joinedload(Url.url_technologies).joinedload(UrlTechnology.technology),
-    ).filter(Url.id == url_id).first()
+    ).filter(Url.id == url_id, Url.import_links.any(ImportUrl.recon_import.has(ReconImport.id.is_not(None)))).first()
 
     if not u:
         return error_response("NOT_FOUND", "URL not found", status_code=404)
@@ -616,10 +619,26 @@ def get_url_details(url_id: int, db: Session = Depends(get_db)):
 
 @router.delete("/{url_id}")
 def delete_url(url_id: int, db: Session = Depends(get_db)):
-    u = db.query(Url).filter(Url.id == url_id).first()
+    u = db.query(Url).filter(Url.id == url_id, Url.import_links.any(ImportUrl.recon_import.has(ReconImport.id.is_not(None)))).first()
     if not u:
         return error_response("NOT_FOUND", "URL not found", status_code=404)
 
+    job_ids = {row[0] for row in db.query(ScanJobUrl.scan_job_id).filter(ScanJobUrl.url_id == url_id).all()}
+    tech_ids = {row[0] for row in db.query(UrlTechnology.technology_id).filter(UrlTechnology.url_id == url_id).all()}
+    db.query(ScanResult).filter(ScanResult.url_id == url_id).delete(synchronize_session=False)
+    db.query(ScanJobUrl).filter(ScanJobUrl.url_id == url_id).delete(synchronize_session=False)
     db.delete(u)
+    db.flush()
+    for job_id in job_ids:
+        job = db.query(ScanJob).filter(ScanJob.id == job_id).first()
+        if not job:
+            continue
+        job.total_urls = db.query(ScanJobUrl.id).filter(ScanJobUrl.scan_job_id == job_id).count()
+        if not job.total_urls:
+            db.delete(job)
+    for tech_id in tech_ids:
+        tech = db.query(Technology).filter(Technology.id == tech_id).first()
+        if tech and not tech.url_technologies:
+            db.delete(tech)
     db.commit()
     return success_response({"deleted_id": url_id})

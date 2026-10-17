@@ -16,6 +16,7 @@ def list_technologies(target_id: Optional[int] = None, db: Session = Depends(get
         db.query(Technology.name, Technology.category, func.count(UrlTechnology.url_id).label("count"))
         .join(UrlTechnology, Technology.id == UrlTechnology.technology_id)
         .join(Url, UrlTechnology.url_id == Url.id)
+        .filter(Url.import_links.any())
     )
     if target_id:
         query = query.filter(Url.target_id == target_id)
@@ -29,7 +30,7 @@ def list_technologies(target_id: Optional[int] = None, db: Session = Depends(get
 
 @router.get("/dashboard/stats")
 def get_dashboard_stats(target_id: Optional[int] = None, db: Session = Depends(get_db)):
-    url_q = db.query(Url)
+    url_q = db.query(Url).filter(Url.import_links.any())
     if target_id:
         url_q = url_q.filter(Url.target_id == target_id)
 
@@ -48,11 +49,12 @@ def get_dashboard_stats(target_id: Optional[int] = None, db: Session = Depends(g
         db.query(HttpResult)
         .join(latest_result_ids, HttpResult.id == latest_result_ids.c.result_id)
         .join(Url, HttpResult.url_id == Url.id)
+        .filter(Url.import_links.any())
     )
 
     checked_q = db.query(func.count(distinct(HttpResult.url_id))).join(
         latest_result_ids, HttpResult.id == latest_result_ids.c.result_id
-    ).join(Url, HttpResult.url_id == Url.id)
+    ).join(Url, HttpResult.url_id == Url.id).filter(Url.import_links.any())
     if target_id:
         checked_q = checked_q.filter(Url.target_id == target_id)
     checked_count = checked_q.scalar() or 0
@@ -116,12 +118,14 @@ def get_dashboard_stats(target_id: Optional[int] = None, db: Session = Depends(g
         db.query(Technology.name, func.count(UrlTechnology.url_id).label("cnt"))
         .join(UrlTechnology, Technology.id == UrlTechnology.technology_id)
         .join(Url, UrlTechnology.url_id == Url.id)
+        .filter(Url.import_links.any())
     )
     technology_count_q = (
         db.query(func.count(distinct(Technology.id)))
         .select_from(Technology)
         .join(UrlTechnology, Technology.id == UrlTechnology.technology_id)
         .join(Url, UrlTechnology.url_id == Url.id)
+        .filter(Url.import_links.any())
     )
     if target_id:
         tech_q = tech_q.filter(Url.target_id == target_id)

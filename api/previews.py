@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from database.database import get_db
-from database.models import Url
+from database.models import ImportUrl, ReconImport, Url
 from services.browser_preview import (
     capture_preview,
     encode_preview_header,
@@ -23,7 +23,10 @@ async def get_url_preview(url_id: int, db: Session = Depends(get_db)):
     streams bytes directly to the browser, and immediately discards them.
     NEVER writes to disk, SQLite, or persistent cache.
     """
-    url_obj = db.query(Url).filter(Url.id == url_id).first()
+    url_obj = db.query(Url).filter(
+        Url.id == url_id,
+        Url.import_links.any(ImportUrl.recon_import.has(ReconImport.id.is_not(None))),
+    ).first()
     if not url_obj:
         return error_response("NOT_FOUND", "URL not found", status_code=404)
 

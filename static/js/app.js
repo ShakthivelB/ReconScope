@@ -53,6 +53,13 @@ const ReconApp = {
   scanPollingSuppressed: false,
 
   initScanControls() {
+    window.addEventListener("storage", (event) => {
+      if (event.key !== "reconscope_data_changed") return;
+      this.scanPollingSuppressed = false;
+      const savedId = localStorage.getItem("reconscope_scan_id");
+      if (savedId) this.pollScan(savedId, true);
+      else this.loadActiveScan();
+    });
     const checkButton = document.getElementById("check-urls-btn");
     const closeButton = document.getElementById("scan-widget-close");
     if (checkButton) checkButton.addEventListener("click", () => this.startUrlCheck());
@@ -98,7 +105,7 @@ const ReconApp = {
   async loadActiveScan() {
     if (this.scanPollingSuppressed) return;
     try {
-      const response = await fetch("/api/scans/active");
+      const response = await fetch("/api/scans/active", { cache: "no-store" });
       const result = await response.json();
       // success_response(None) is serialized as an empty object by the API
       // helper. Only resume polling when the response contains a real scan id.
@@ -130,7 +137,7 @@ const ReconApp = {
     widget.classList.add("active");
     let shouldContinue = true;
     try {
-      const response = await fetch(`/api/scans/${validScanId}`);
+      const response = await fetch(`/api/scans/${validScanId}`, { cache: "no-store" });
       if (response.status === 404) {
         if (localStorage.getItem("reconscope_scan_id") === String(scanId)) {
           localStorage.removeItem("reconscope_scan_id");

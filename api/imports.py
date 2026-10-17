@@ -5,11 +5,12 @@ import re
 from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, UploadFile
+from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from database.database import get_db
-from database.models import ReconImport, Target, Url
+from database.models import ImportUrl, ReconImport, ScanJob, ScanJobUrl, ScanResult, Target, Technology, Url, UrlTechnology
 from services.interesting_detector import detect_interesting_url
 from services.url_normalizer import normalize_url
 from services.url_parser import parse_url
@@ -112,6 +113,19 @@ def process_urls_ingestion(
     existing_urls = {u.normalized_url: u for u in db.query(Url).all()}
 
     seen_in_batch = set()
+    imported_urls = []
+
+    recon_import = ReconImport(
+        target_id=target_id,
+        filename=filename,
+        source_type=source_type,
+        raw_count=raw_count,
+        new_count=0,
+        duplicate_count=0,
+        created_at=now,
+    )
+    db.add(recon_import)
+    db.flush()
 
     for raw in raw_urls:
         try:
@@ -148,6 +162,7 @@ def process_urls_ingestion(
                     path=parsed["path"],
                     query=parsed["query"],
                     sources=source_type,
+                    import_tracking_complete=True,
                     is_interesting=is_interesting,
                     interesting_reasons=", ".join(reasons),
                     first_seen=now,
@@ -155,20 +170,14 @@ def process_urls_ingestion(
                 )
                 db.add(url_obj)
                 existing_urls[norm] = url_obj
+            imported_urls.append(url_obj)
         except Exception:
             continue
 
-    # Record the import event
-    recon_import = ReconImport(
-        target_id=target_id,
-        filename=filename,
-        source_type=source_type,
-        raw_count=raw_count,
-        new_count=new_count,
-        duplicate_count=duplicate_count,
-        created_at=now,
-    )
-    db.add(recon_import)
+    recon_import.new_count = new_count
+    recon_import.duplicate_count = duplicate_count
+    for url_obj in imported_urls:
+        db.add(ImportUrl(recon_import=recon_import, url=url_obj))
     db.commit()
 
     return {
@@ -205,23 +214,139 @@ def list_imports(target_id: Optional[int] = None, db: Session = Depends(get_db))
 
 @router.delete("/{import_id}")
 def delete_import(import_id: int, db: Session = Depends(get_db)):
-    """Delete one import-history record without touching URLs or their results."""
+    """Delete an import and URLs proven to be exclusively owned by it."""
     import_record = db.query(ReconImport).filter(ReconImport.id == import_id).first()
     if not import_record:
         return error_response("NOT_FOUND", "Import record not found", status_code=404)
     filename = import_record.filename
 
+    linked_url_ids = [row[0] for row in db.query(ImportUrl.url_id).filter(ImportUrl.import_id == import_id).all()]
+    linked_urls = db.query(Url).filter(Url.id.in_(linked_url_ids)).all() if linked_url_ids else []
+    link_counts = dict(
+        db.query(ImportUrl.url_id, func.count(ImportUrl.id))
+        .filter(ImportUrl.url_id.in_(linked_url_ids))
+        .group_by(ImportUrl.url_id).all()
+    ) if linked_url_ids else {}
+    delete_urls = [u for u in linked_urls if link_counts.get(u.id, 0) == 1]
+    delete_ids = [u.id for u in delete_urls]
+
+    shared_count = sum(1 for u in linked_urls if link_counts.get(u.id, 0) > 1)
+    deleted_technologies = 0
+    deleted_scan_jobs = 0
+    deleted_scan_job_ids = []
     try:
+        # Remove this source's label from shared URLs even when every URL in
+        # the import is shared and there are no exclusive URLs to delete.
+        for url_obj in linked_urls:
+            if url_obj.id in delete_ids:
+                continue
+            remaining_source = db.query(ImportUrl.id).join(ReconImport).filter(
+                ImportUrl.url_id == url_obj.id,
+                ImportUrl.import_id != import_id,
+                ReconImport.source_type == import_record.source_type,
+            ).first()
+            if not remaining_source:
+                labels = [label.strip() for label in (url_obj.sources or "").split(",") if label.strip()]
+                url_obj.sources = ", ".join(label for label in labels if label != import_record.source_type)
+        if delete_ids:
+            affected_scan_job_ids = {
+                row[0] for row in db.query(ScanJobUrl.scan_job_id)
+                .filter(ScanJobUrl.url_id.in_(delete_ids)).distinct().all()
+            }
+            affected_scan_job_ids.update(
+                row[0] for row in db.query(ScanResult.scan_job_id)
+                .filter(ScanResult.url_id.in_(delete_ids)).distinct().all()
+            )
+            affected_technology_ids = {
+                row[0] for row in db.query(UrlTechnology.technology_id)
+                .filter(UrlTechnology.url_id.in_(delete_ids)).distinct().all()
+            }
+            # Remove queued scan membership and results for URLs being deleted.
+            db.query(ScanResult).filter(ScanResult.url_id.in_(delete_ids)).delete(synchronize_session=False)
+            db.query(ScanJobUrl).filter(ScanJobUrl.url_id.in_(delete_ids)).delete(synchronize_session=False)
+            for url_obj in delete_urls:
+                db.delete(url_obj)
+            db.flush()
+            if affected_technology_ids:
+                orphaned_technologies = db.query(Technology).filter(
+                    Technology.id.in_(affected_technology_ids),
+                    ~Technology.url_technologies.any(),
+                ).all()
+                deleted_technologies = len(orphaned_technologies)
+                for technology in orphaned_technologies:
+                    db.delete(technology)
+
+            for job_id in affected_scan_job_ids:
+                job = db.query(ScanJob).filter(ScanJob.id == job_id).first()
+                if not job:
+                    continue
+                remaining_urls = db.query(func.count(ScanJobUrl.id)).filter(
+                    ScanJobUrl.scan_job_id == job_id
+                ).scalar() or 0
+                if not remaining_urls:
+                    # With no surviving scan members, the history entry contains
+                    # no data from an active import and can be removed safely.
+                    db.delete(job)
+                    deleted_scan_jobs += 1
+                    deleted_scan_job_ids.append(job_id)
+                    continue
+
+                rows = (
+                    db.query(ScanResult)
+                    .join(
+                        ScanJobUrl,
+                        (ScanJobUrl.scan_job_id == ScanResult.scan_job_id)
+                        & (ScanJobUrl.url_id == ScanResult.url_id),
+                    )
+                    .filter(ScanResult.scan_job_id == job_id)
+                    .all()
+                )
+                job.total_urls = remaining_urls
+                job.completed_urls = len(rows)
+                job.status_2xx = sum(1 for row in rows if row.status_code is not None and 200 <= row.status_code < 300)
+                job.status_3xx = sum(1 for row in rows if row.status_code is not None and 300 <= row.status_code < 400)
+                job.status_401 = sum(1 for row in rows if row.status_code == 401)
+                job.status_403 = sum(1 for row in rows if row.status_code == 403)
+                job.status_404 = sum(1 for row in rows if row.status_code == 404)
+                job.status_5xx = sum(1 for row in rows if row.status_code is not None and 500 <= row.status_code < 600)
+                job.timeouts = sum(1 for row in rows if row.status_code is None and row.error_message and "timeout" in row.error_message.lower())
+                job.errors = sum(1 for row in rows if row.status_code is None and not (row.error_message and "timeout" in row.error_message.lower()))
         db.delete(import_record)
         db.commit()
+        if deleted_scan_job_ids:
+            from services.http_probe import ACTIVE_SCANS
+            for job_id in deleted_scan_job_ids:
+                if job_id in ACTIVE_SCANS:
+                    ACTIVE_SCANS[job_id]["status"] = "cancelled"
     except SQLAlchemyError:
         db.rollback()
-        return error_response("DELETE_FAILED", "Could not delete the import record", status_code=500)
+        return error_response("DELETE_FAILED", "Could not delete the imported source", status_code=500)
 
     return success_response({
         "deleted_id": import_id,
         "filename": filename,
-        "urls_preserved": True,
+        "deleted_urls": len(delete_ids),
+        "deleted_technologies": deleted_technologies,
+        "deleted_scan_jobs": deleted_scan_jobs,
+        "preserved_shared_urls": shared_count,
+    })
+
+
+@router.get("/{import_id}/deletion-preview")
+def preview_import_deletion(import_id: int, db: Session = Depends(get_db)):
+    import_record = db.query(ReconImport).filter(ReconImport.id == import_id).first()
+    if not import_record:
+        return error_response("NOT_FOUND", "Import record not found", status_code=404)
+    ids = [row[0] for row in db.query(ImportUrl.url_id).filter(ImportUrl.import_id == import_id).all()]
+    urls = db.query(Url).filter(Url.id.in_(ids)).all() if ids else []
+    counts = dict(db.query(ImportUrl.url_id, func.count(ImportUrl.id))
+                  .filter(ImportUrl.url_id.in_(ids)).group_by(ImportUrl.url_id).all()) if ids else {}
+    exclusive = sum(1 for url in urls if counts.get(url.id, 0) == 1)
+    shared = sum(1 for url in urls if counts.get(url.id, 0) > 1)
+    return success_response({
+        "id": import_id, "filename": import_record.filename,
+        "exclusive_urls": exclusive, "shared_urls": shared,
+        "original_file_stored": False,
     })
 
 

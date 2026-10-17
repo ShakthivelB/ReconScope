@@ -28,6 +28,12 @@ const UrlsModule = {
   async init() {
     this.bindEvents();
     window.addEventListener("scanUpdated", () => this.loadUrls());
+    window.addEventListener("storage", (event) => {
+      if (event.key === "reconscope_data_changed") {
+        this.currentPage = 1;
+        this.loadUrls();
+      }
+    });
     await this.loadUrls();
   },
 
@@ -157,7 +163,7 @@ const UrlsModule = {
     if (this.hostnameFilter) params.append("hostname", this.hostnameFilter);
 
     try {
-      const resp = await fetch(`/api/urls?${params.toString()}`, { signal: controller.signal });
+      const resp = await fetch(`/api/urls?${params.toString()}`, { signal: controller.signal, cache: "no-store" });
       const json = await resp.json();
       if (!resp.ok || !json.success) throw new Error(json.error?.message || "Search request failed");
 

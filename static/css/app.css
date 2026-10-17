@@ -298,6 +298,15 @@ body {
   color: #fff;
 }
 
+#import-delete-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.68);
+}
+
+#import-delete-dialog button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
 .btn-sm {
   padding: 4px 12px;
   min-height: 44px;
