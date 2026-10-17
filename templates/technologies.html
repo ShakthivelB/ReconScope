@@ -66,9 +66,9 @@
         container.innerHTML = '<div style="color:var(--text-muted); padding:10px;">No technologies detected yet.</div>';
       }
 
-      const container = document.getElementById("subdomains-list");
+      const subdomainsContainer = document.getElementById("subdomains-list");
       if (subJson.data.length > 0) {
-        container.innerHTML = subJson.data.map(s => `
+        subdomainsContainer.innerHTML = subJson.data.map(s => `
           <div style="display:flex; justify-content:space-between; align-items:center; padding:8px; background:var(--bg-tertiary); border-radius:var(--radius-sm);">
             <div>
               <a href="/urls?hostname=${encodeURIComponent(s.hostname)}" style="font-weight:600; font-family:var(--font-mono); color:var(--accent-blue); text-decoration:none;">${escapeTechnologyText(s.hostname)}</a>
@@ -80,7 +80,7 @@
           </div>
         `).join("");
       } else {
-        container.innerHTML = '<div style="color:var(--text-muted); padding:10px;">No subdomains discovered yet.</div>';
+        subdomainsContainer.innerHTML = '<div style="color:var(--text-muted); padding:10px;">No subdomains discovered yet.</div>';
       }
     } catch(e) {
       console.error(e);
