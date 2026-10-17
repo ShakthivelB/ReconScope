@@ -18,6 +18,7 @@ const UrlsModule = {
   activePreviewBlobs: {}, // Tracks in-memory blob URLs per urlId to revoke on collapse
   requestSequence: 0,
   requestController: null,
+  globalListenersBound: false,
 
   escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -26,15 +27,37 @@ const UrlsModule = {
   },
 
   async init() {
+    if (!document.getElementById("urls-container")) return;
+    const searchParams = new URLSearchParams(window.location.search);
+    this.currentPage = 1;
+    this.currentLimit = 50;
+    this.currentStatus = "";
+    this.isInterestingOnly = false;
+    this.isPinnedOnly = false;
+    this.currentSort = "newest";
+    this.searchQuery = "";
+    this.searchField = "all";
+    this.regexEnabled = false;
+    this.hostnameFilter = searchParams.get("hostname") || "";
     this.bindEvents();
-    window.addEventListener("scanUpdated", () => this.loadUrls());
-    window.addEventListener("storage", (event) => {
-      if (event.key === "reconscope_data_changed") {
-        this.currentPage = 1;
-        this.loadUrls();
-      }
-    });
+    if (!this.globalListenersBound) {
+      window.addEventListener("scanUpdated", () => this.loadUrls());
+      window.addEventListener("storage", (event) => {
+        if (event.key === "reconscope_data_changed") {
+          this.currentPage = 1;
+          this.loadUrls();
+        }
+      });
+      this.globalListenersBound = true;
+    }
     await this.loadUrls();
+  },
+
+  unmount() {
+    clearTimeout(this.searchDebounceTimer);
+    this.requestSequence += 1;
+    this.requestController?.abort();
+    this.cleanupAllBlobs();
   },
 
   bindEvents() {
@@ -623,12 +646,9 @@ const UrlsModule = {
   goToPage(pageNum) {
     this.currentPage = pageNum;
     this.loadUrls();
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    document.getElementById("page-workspace")?.scrollTo({ top: 0, behavior: "smooth" });
   },
 };
 
-document.addEventListener("DOMContentLoaded", () => {
-  if (document.getElementById("urls-container")) {
-    UrlsModule.init();
-  }
-});
+document.addEventListener("reconscope:page-unload", () => UrlsModule.unmount());
+document.addEventListener("reconscope:page-load", () => UrlsModule.init());

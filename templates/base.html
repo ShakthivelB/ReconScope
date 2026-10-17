@@ -4,11 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}ReconScope{% endblock %} - Recon Analyst Workstation</title>
-  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/app.css?v=workspace-shell-2">
   {% block extra_head %}{% endblock %}
 </head>
 <body>
-  <div class="app-container">
+  <div class="app-container page-{{ active_page|default('dashboard') }}">
     <!-- Desktop & Mobile Drawer Sidebar -->
     <aside class="sidebar">
       <div class="sidebar-header">
@@ -17,24 +17,24 @@
         <span class="brand-badge">Local</span>
       </div>
 
-      <nav class="sidebar-nav">
-        <a href="/dashboard" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
+      <nav id="main-navigation" class="sidebar-nav" aria-label="Main navigation">
+        <a href="/dashboard" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}" {% if active_page == 'dashboard' %}aria-current="page"{% endif %}>
           <span class="nav-icon">📊</span>
           <span>Dashboard</span>
         </a>
-        <a href="/imports" class="nav-item {% if active_page == 'imports' %}active{% endif %}">
+        <a href="/imports" class="nav-item {% if active_page == 'imports' %}active{% endif %}" {% if active_page == 'imports' %}aria-current="page"{% endif %}>
           <span class="nav-icon">📥</span>
           <span>Import Recon</span>
         </a>
-        <a href="/urls" class="nav-item {% if active_page == 'urls' %}active{% endif %}">
+        <a href="/urls" class="nav-item {% if active_page == 'urls' %}active{% endif %}" {% if active_page == 'urls' %}aria-current="page"{% endif %}>
           <span class="nav-icon">🔍</span>
           <span>URL Explorer</span>
         </a>
-        <a href="/technologies" class="nav-item {% if active_page == 'technologies' %}active{% endif %}">
+        <a href="/technologies" class="nav-item {% if active_page == 'technologies' %}active{% endif %}" {% if active_page == 'technologies' %}aria-current="page"{% endif %}>
           <span class="nav-icon">🧩</span>
           <span>Technologies</span>
         </a>
-        <a href="/settings" class="nav-item {% if active_page == 'settings' %}active{% endif %}">
+        <a href="/settings" class="nav-item {% if active_page == 'settings' %}active{% endif %}" {% if active_page == 'settings' %}aria-current="page"{% endif %}>
           <span class="nav-icon">⚙️</span>
           <span>Settings</span>
         </a>
@@ -42,7 +42,7 @@
 
       <div class="sidebar-footer">
         <div>ReconScope v1.0.0</div>
-        <div style="font-size: 11px; margin-top: 2px;">Local-First Security Triage</div>
+        <div style="font-size: 11px; margin-top: 2px;">Made by Shakthi🖤</div>
       </div>
     </aside>
 
@@ -51,7 +51,7 @@
       <!-- Topbar -->
       <header class="topbar">
         <div class="topbar-left">
-          <button id="mobile-menu-toggle" class="mobile-menu-btn" aria-label="Toggle navigation menu">☰</button>
+          <button id="mobile-menu-toggle" class="mobile-menu-btn" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="main-navigation">☰</button>
           <div class="topbar-context">All imported URLs</div>
         </div>
 
@@ -62,7 +62,7 @@
       </header>
 
       <!-- Main Page Content -->
-      <main class="content-container">
+      <main id="page-workspace" class="content-container" tabindex="-1">
         {% block content %}{% endblock %}
       </main>
     </div>
@@ -78,7 +78,11 @@
   </section>
 
   <!-- Shared Scripts -->
-  <script src="/static/js/app.js?v=targetless-2"></script>
+  <script src="/static/js/app.js?v=workspace-shell-1"></script>
+  <script src="/static/js/dashboard.js?v=workspace-shell-1"></script>
+  <script src="/static/js/imports.js?v=workspace-shell-1"></script>
+  <script src="/static/js/urls.js?v=workspace-shell-1"></script>
+  <script src="/static/js/technologies.js?v=workspace-shell-1"></script>
   {% block extra_scripts %}{% endblock %}
 </body>
 </html>

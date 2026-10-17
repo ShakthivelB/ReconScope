@@ -51,10 +51,12 @@ body {
   font-family: var(--font-family);
   font-size: 14px;
   line-height: 1.5;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 /* ==========================================================================
@@ -63,18 +65,28 @@ body {
 
 .app-container {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   width: 100%;
+  overflow: hidden;
 }
 
 /* Sidebar (Desktop) */
 .sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
   width: var(--sidebar-width);
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   background-color: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  overflow: hidden;
   z-index: 100;
   transition: transform var(--transition-normal);
 }
@@ -116,6 +128,15 @@ body {
   flex-direction: column;
   gap: 4px;
   flex: 1;
+  min-height: 0;
+  overflow-y: hidden;
+  overscroll-behavior: contain;
+}
+
+@media (max-height: 480px) {
+  .sidebar-nav {
+    overflow-y: auto;
+  }
 }
 
 .nav-item {
@@ -150,6 +171,7 @@ body {
 }
 
 .sidebar-footer {
+  flex: 0 0 auto;
   padding: 16px 20px;
   border-top: 1px solid var(--border-color);
   font-size: 12px;
@@ -159,9 +181,14 @@ body {
 /* Main Area */
 .main-area {
   flex: 1;
+  margin-left: var(--sidebar-width);
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   background-color: var(--bg-primary);
 }
 
@@ -175,8 +202,7 @@ body {
   justify-content: space-between;
   padding: 0 24px;
   gap: 16px;
-  position: sticky;
-  top: 0;
+  flex: 0 0 var(--topbar-height);
   z-index: 50;
 }
 
@@ -222,6 +248,15 @@ body {
   width: 100%;
   margin: 0 auto;
   flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.app-container.page-urls .content-container {
+  max-width: none;
 }
 
 /* Page Header */
@@ -917,6 +952,23 @@ body {
    ========================================================================== */
 
 @media (max-width: 768px) {
+  body.sidebar-open::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    background: rgba(0, 0, 0, 0.45);
+  }
+
+  .app-container {
+    display: block;
+  }
+
+  .main-area {
+    width: 100%;
+    margin-left: 0;
+  }
+
   .mobile-menu-btn {
     display: inline-flex;
   }
@@ -925,6 +977,10 @@ body {
     position: fixed;
     top: 0;
     bottom: 0;
+    height: 100vh;
+    height: 100dvh;
+    max-width: min(var(--sidebar-width), 86vw);
+    overflow: hidden;
     left: 0;
     transform: translateX(-100%);
     box-shadow: var(--shadow-lg);
@@ -938,9 +994,15 @@ body {
     padding: 16px;
     min-width: 0;
     overflow-x: hidden;
+    overflow-y: auto;
+    height: auto;
+    flex: 1 1 auto;
   }
 
   .topbar {
+    height: auto;
+    min-height: var(--topbar-height);
+    flex-basis: auto;
     gap: 8px;
     flex-wrap: wrap;
   }

@@ -40,6 +40,7 @@ const ImportsModule = {
     const dropZone = document.getElementById("drop-zone");
     const fileInput = document.getElementById("import-files");
     if (dropZone && fileInput) {
+      dropZone.addEventListener("click", () => fileInput.click());
       ["dragenter", "dragover"].forEach(name => {
         dropZone.addEventListener(name, (e) => {
           e.preventDefault();
@@ -199,7 +200,7 @@ const ImportsModule = {
       if (!response.ok || !result.success) throw new Error(result.error?.message || "Could not delete the imported source");
       const data = result.data;
       ReconApp.showToast(`Deleted source and ${data.deleted_urls} exclusive URL(s).`, "success");
-      document.getElementById("import-delete-dialog").close();
+      document.getElementById("import-delete-dialog")?.close();
       localStorage.setItem("reconscope_data_changed", String(Date.now()));
       await this.loadImportHistory();
     } catch (error) {
@@ -214,8 +215,6 @@ const ImportsModule = {
   }
 };
 
-document.addEventListener("DOMContentLoaded", () => {
-  if (document.getElementById("import-form")) {
-    ImportsModule.init();
-  }
+document.addEventListener("reconscope:page-load", () => {
+  if (document.getElementById("import-form")) ImportsModule.init();
 });

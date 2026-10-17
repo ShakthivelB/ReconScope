@@ -6,6 +6,7 @@ const ReconApp = {
   init() {
     this.initMobileNav();
     this.initScanControls();
+    this.initWorkspaceNavigation();
   },
 
   // Toast Notification System
@@ -36,14 +37,91 @@ const ReconApp = {
     const sidebar = document.querySelector(".sidebar");
     if (btn && sidebar) {
       btn.addEventListener("click", () => {
-        sidebar.classList.toggle("open");
+        this.setSidebarOpen(!sidebar.classList.contains("open"));
       });
       // Close on outside click
       document.addEventListener("click", (e) => {
         if (!sidebar.contains(e.target) && !btn.contains(e.target)) {
-          sidebar.classList.remove("open");
+          this.setSidebarOpen(false);
         }
       });
+    }
+  },
+
+  setSidebarOpen(open) {
+    const sidebar = document.querySelector(".sidebar");
+    const button = document.getElementById("mobile-menu-toggle");
+    sidebar?.classList.toggle("open", open);
+    document.body.classList.toggle("sidebar-open", open);
+    button?.setAttribute("aria-expanded", String(open));
+  },
+
+  initWorkspaceNavigation() {
+    const pagePaths = new Set(["/dashboard", "/imports", "/urls", "/technologies", "/settings"]);
+    document.addEventListener("click", (event) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link = event.target.closest?.("a[href]");
+      if (!link || link.target || link.hasAttribute("download")) return;
+      const destination = new URL(link.href, window.location.href);
+      if (destination.origin !== window.location.origin || !pagePaths.has(destination.pathname)) return;
+      event.preventDefault();
+      this.navigateWorkspace(destination.href);
+    });
+    window.addEventListener("popstate", (event) => this.navigateWorkspace(
+      window.location.href, false, Number(event.state?.workspaceScroll) || 0,
+    ));
+  },
+
+  async navigateWorkspace(url, pushHistory = true, restoreScroll = 0) {
+    const sequence = ++this.navigationSequence;
+    const workspace = document.getElementById("page-workspace");
+    if (!workspace) {
+      window.location.assign(url);
+      return;
+    }
+    workspace.setAttribute("aria-busy", "true");
+    try {
+      const response = await fetch(url, {
+        cache: "no-store",
+        headers: { "X-Requested-With": "ReconScope-Workspace", Accept: "text/html" },
+      });
+      if (!response.ok) throw new Error(`Page request failed (${response.status})`);
+      const html = await response.text();
+      if (sequence !== this.navigationSequence) return;
+      const nextDocument = new DOMParser().parseFromString(html, "text/html");
+      const nextWorkspace = nextDocument.getElementById("page-workspace");
+      if (!nextWorkspace) throw new Error("The response did not contain a page workspace.");
+
+      const previousScroll = workspace.scrollTop;
+      document.dispatchEvent(new CustomEvent("reconscope:page-unload"));
+      workspace.replaceChildren(...Array.from(nextWorkspace.childNodes));
+      document.title = nextDocument.title;
+      const resolvedUrl = new URL(response.url || url, window.location.href);
+      const pageName = nextDocument.querySelector(".sidebar-nav .nav-item.active")?.getAttribute("href")
+        ?.replace(/^\//, "") || resolvedUrl.pathname.replace(/^\//, "");
+      const appContainer = document.querySelector(".app-container");
+      appContainer.className = `app-container page-${pageName || "dashboard"}`;
+      document.querySelectorAll(".sidebar-nav .nav-item").forEach((item) => {
+        const active = new URL(item.href, window.location.href).pathname === resolvedUrl.pathname;
+        item.classList.toggle("active", active);
+        if (active) item.setAttribute("aria-current", "page");
+        else item.removeAttribute("aria-current");
+      });
+      if (pushHistory) {
+        history.replaceState({ ...history.state, workspaceScroll: previousScroll }, "");
+        history.pushState({ workspaceScroll: 0 }, "", resolvedUrl.pathname + resolvedUrl.search + resolvedUrl.hash);
+      }
+      this.setSidebarOpen(false);
+      workspace.scrollTop = pushHistory ? 0 : restoreScroll;
+      workspace.removeAttribute("aria-busy");
+      workspace.focus({ preventScroll: true });
+      document.dispatchEvent(new CustomEvent("reconscope:page-load", {
+        detail: { pathname: resolvedUrl.pathname, search: resolvedUrl.search },
+      }));
+    } catch (error) {
+      if (sequence !== this.navigationSequence) return;
+      console.warn("Workspace navigation failed; loading the page normally", error);
+      window.location.assign(url);
     }
   },
 
@@ -51,6 +129,7 @@ const ReconApp = {
   pollingScanId: null,
   scanPollInFlight: false,
   scanPollingSuppressed: false,
+  navigationSequence: 0,
 
   initScanControls() {
     window.addEventListener("storage", (event) => {
@@ -207,4 +286,7 @@ const ReconApp = {
 
 document.addEventListener("DOMContentLoaded", () => {
   ReconApp.init();
+  document.dispatchEvent(new CustomEvent("reconscope:page-load", {
+    detail: { pathname: window.location.pathname, search: window.location.search },
+  }));
 });

@@ -7,14 +7,19 @@ const DashboardModule = {
   requestInFlight: false,
   refreshPending: false,
   hasLoaded: false,
+  globalListenersBound: false,
 
   init() {
+    if (!document.getElementById("stat-total-urls")) return;
     document.getElementById("dashboard-retry")?.addEventListener("click", () => this.loadStats());
-    window.addEventListener("scanProgress", () => this.scheduleRefresh());
-    window.addEventListener("scanUpdated", () => this.scheduleRefresh());
-    window.addEventListener("storage", (event) => {
-      if (event.key === "reconscope_data_changed") this.loadStats();
-    });
+    if (!this.globalListenersBound) {
+      window.addEventListener("scanProgress", () => this.scheduleRefresh());
+      window.addEventListener("scanUpdated", () => this.scheduleRefresh());
+      window.addEventListener("storage", (event) => {
+        if (event.key === "reconscope_data_changed") this.loadStats();
+      });
+      this.globalListenersBound = true;
+    }
     this.loadStats();
   },
 
@@ -153,6 +158,4 @@ const DashboardModule = {
   },
 };
 
-document.addEventListener("DOMContentLoaded", () => {
-  if (document.getElementById("stat-total-urls")) DashboardModule.init();
-});
+document.addEventListener("reconscope:page-load", () => DashboardModule.init());
