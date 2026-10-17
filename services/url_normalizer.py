@@ -33,30 +33,37 @@ def normalize_url(raw_url: str) -> str:
         return ""
 
     url_lower = url_str.lower()
-    if not (url_lower.startswith("http://") or url_lower.startswith("https://")):
+    if "://" in url_str:
+        explicit_scheme = url_str.split("://", 1)[0].lower()
+        if explicit_scheme not in ("http", "https"):
+            return ""
+    elif url_lower.startswith(("http:", "https:")):
+        # Reject malformed explicit schemes instead of reinterpreting them as hostnames.
+        return ""
+    else:
         url_str = "http://" + url_str
 
     try:
         parsed = urllib.parse.urlsplit(url_str)
-    except Exception:
-        return url_str
+        hostname = parsed.hostname.lower() if parsed.hostname else ""
+        port = parsed.port
+    except (ValueError, AttributeError):
+        return ""
 
     scheme = parsed.scheme.lower()
     if scheme not in ("http", "https"):
-        scheme = "http"
+        return ""
 
-    hostname = parsed.hostname.lower() if parsed.hostname else ""
     if not hostname:
-        return url_str
+        return ""
 
-    port = parsed.port
     # Remove default ports
     if (scheme == "http" and port == 80) or (scheme == "https" and port == 443):
         port = None
 
-    netloc = hostname
+    netloc = f"[{hostname}]" if ":" in hostname else hostname
     if port:
-        netloc = f"{hostname}:{port}"
+        netloc = f"{netloc}:{port}"
 
     # Normalize path
     path = parsed.path

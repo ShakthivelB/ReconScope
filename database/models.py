@@ -25,7 +25,7 @@ class Target(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
     root_domain = Column(String(255), nullable=False, index=True)
-    scope_rules = Column(Text, default="", nullable=False)  # Line-separated or comma-separated wildcards
+    scope_rules = Column(Text, default="", nullable=False)
     notes = Column(Text, default="", nullable=False)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
@@ -36,11 +36,18 @@ class Target(Base):
     scan_jobs = relationship("ScanJob", back_populates="target", cascade="all, delete-orphan")
 
 
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key = Column(String(128), primary_key=True)
+    value = Column(String(1024), nullable=False)
+
+
 class ReconImport(Base):
     __tablename__ = "recon_imports"
 
     id = Column(Integer, primary_key=True, index=True)
-    target_id = Column(Integer, ForeignKey("targets.id", ondelete="CASCADE"), nullable=False, index=True)
+    target_id = Column(Integer, ForeignKey("targets.id", ondelete="CASCADE"), nullable=True, index=True)
     filename = Column(String(255), nullable=False)
     source_type = Column(String(64), nullable=False, default="Manual")
     raw_count = Column(Integer, default=0, nullable=False)
@@ -55,7 +62,7 @@ class Url(Base):
     __tablename__ = "urls"
 
     id = Column(Integer, primary_key=True, index=True)
-    target_id = Column(Integer, ForeignKey("targets.id", ondelete="CASCADE"), nullable=False, index=True)
+    target_id = Column(Integer, ForeignKey("targets.id", ondelete="CASCADE"), nullable=True, index=True)
     original_url = Column(Text, nullable=False)
     normalized_url = Column(Text, nullable=False, index=True)
     scheme = Column(String(16), nullable=False, default="http")
@@ -137,7 +144,7 @@ class ScanJob(Base):
     __tablename__ = "scan_jobs"
 
     id = Column(Integer, primary_key=True, index=True)
-    target_id = Column(Integer, ForeignKey("targets.id", ondelete="CASCADE"), nullable=False, index=True)
+    target_id = Column(Integer, ForeignKey("targets.id", ondelete="CASCADE"), nullable=True, index=True)
     status = Column(String(32), default="queued", nullable=False, index=True)  # queued, running, paused, completed, cancelled, failed
     total_urls = Column(Integer, default=0, nullable=False)
     completed_urls = Column(Integer, default=0, nullable=False)

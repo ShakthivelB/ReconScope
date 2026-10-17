@@ -13,8 +13,11 @@ const UrlsModule = {
   searchQuery: "",
   searchField: "all",
   regexEnabled: false,
+  hostnameFilter: new URLSearchParams(window.location.search).get("hostname") || "",
   searchDebounceTimer: null,
   activePreviewBlobs: {}, // Tracks in-memory blob URLs per urlId to revoke on collapse
+  requestSequence: 0,
+  requestController: null,
 
   escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (char) => ({
@@ -24,12 +27,8 @@ const UrlsModule = {
 
   async init() {
     this.bindEvents();
-    await this.loadUrls();
-    window.addEventListener("targetChanged", () => {
-      this.currentPage = 1;
-      this.loadUrls();
-    });
     window.addEventListener("scanUpdated", () => this.loadUrls());
+    await this.loadUrls();
   },
 
   bindEvents() {
@@ -116,6 +115,8 @@ const UrlsModule = {
         this.loadUrls();
       });
     }
+
+    document.getElementById("url-load-retry")?.addEventListener("click", () => this.loadUrls());
   },
 
   async loadUrls() {
@@ -123,11 +124,20 @@ const UrlsModule = {
     const countEl = document.getElementById("url-results-count");
     if (!listEl) return;
 
+    this.requestController?.abort();
+    const controller = new AbortController();
+    this.requestController = controller;
+    const requestId = ++this.requestSequence;
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
     if (listEl.dataset.hasLoaded !== "true") {
       listEl.innerHTML = '<div style="text-align:center; padding: 40px; color: var(--text-muted);"><div class="spinner" style="margin: 0 auto 12px;"></div>Loading reconnaissance endpoints...</div>';
     }
+    if (countEl) countEl.textContent = listEl.dataset.hasLoaded === "true" ? "Refreshing endpoints..." : "Loading endpoints...";
+    const loadError = document.getElementById("url-load-error");
+    const loadErrorMessage = document.getElementById("url-load-error-message");
+    if (loadError) loadError.hidden = true;
 
-    const targetId = ReconApp.getActiveTarget();
     const searchErrorEl = document.getElementById("url-search-error");
     if (searchErrorEl) searchErrorEl.textContent = "";
     const params = new URLSearchParams({
@@ -136,7 +146,6 @@ const UrlsModule = {
       sort_by: this.currentSort,
     });
 
-    if (targetId) params.append("target_id", targetId);
     if (this.searchQuery) {
       params.append("search", this.searchQuery);
       params.append("search_field", this.searchField);
@@ -145,14 +154,19 @@ const UrlsModule = {
     if (this.currentStatus) params.append("status", this.currentStatus);
     if (this.isInterestingOnly) params.append("interesting", "true");
     if (this.isPinnedOnly) params.append("pinned_only", "true");
+    if (this.hostnameFilter) params.append("hostname", this.hostnameFilter);
 
     try {
-      const resp = await fetch(`/api/urls?${params.toString()}`);
+      const resp = await fetch(`/api/urls?${params.toString()}`, { signal: controller.signal });
       const json = await resp.json();
       if (!resp.ok || !json.success) throw new Error(json.error?.message || "Search request failed");
 
-      const items = json.data.items;
-      const pagination = json.data.pagination;
+      const items = json.data?.items;
+      const pagination = json.data?.pagination;
+      if (!Array.isArray(items) || !pagination || !Number.isFinite(Number(pagination.total))) {
+        throw new Error("URL API returned an incomplete response.");
+      }
+      if (requestId !== this.requestSequence) return;
       this.currentPagination = pagination;
       this.cleanupAllBlobs();
       listEl.dataset.hasLoaded = "true";
@@ -162,11 +176,18 @@ const UrlsModule = {
       }
 
       if (items.length === 0) {
+        const hasFilters = Boolean(
+          this.searchQuery || this.currentStatus || this.isInterestingOnly || this.isPinnedOnly || this.hostnameFilter || this.currentPage > 1
+        );
+        const emptyTitle = hasFilters ? "No URLs Match Current Filters" : "No URLs Imported Yet";
+        const emptyDescription = hasFilters
+          ? "Try clearing filters or import more recon data."
+          : "Import a .txt, .csv, or supported recon output to get started.";
         listEl.innerHTML = `
           <div class="empty-state">
             <div class="empty-icon">🔍</div>
-            <div class="empty-title">No URLs Match Current Filters</div>
-            <div class="empty-desc">Try clearing filters or import more recon data.</div>
+            <div class="empty-title">${emptyTitle}</div>
+            <div class="empty-desc">${emptyDescription}</div>
           </div>
         `;
         this.renderPagination(pagination);
@@ -176,10 +197,21 @@ const UrlsModule = {
       listEl.innerHTML = items.map((u) => this.renderUrlCard(u)).join("");
       this.renderPagination(pagination);
     } catch (e) {
-      if (searchErrorEl) searchErrorEl.textContent = e.message;
-      if (listEl.dataset.hasLoaded !== "true") {
-        listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠</div><div class="empty-title">Search could not be completed</div><div class="empty-desc">Correct the search expression or adjust your filters.</div></div>';
+      if (requestId !== this.requestSequence) return;
+      if (e.name === "AbortError" && controller.signal.aborted) {
+        if (loadErrorMessage) loadErrorMessage.textContent = "URL request timed out after 15 seconds.";
+      } else if (loadErrorMessage) {
+        loadErrorMessage.textContent = e.message || "Could not load URLs.";
       }
+      if (loadError) loadError.hidden = false;
+      if (countEl && listEl.dataset.hasLoaded !== "true") countEl.textContent = "Could not load URLs";
+      else if (countEl) countEl.textContent = "Could not refresh URLs; showing previous results";
+      if (listEl.dataset.hasLoaded !== "true") {
+        listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠</div><div class="empty-title">URLs could not be loaded</div><div class="empty-desc">Check the error above and retry.</div></div>';
+      }
+    } finally {
+      clearTimeout(timeout);
+      if (requestId === this.requestSequence) this.requestController = null;
     }
   },
 

@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Form, UploadFile
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from database.database import get_db
@@ -90,14 +91,14 @@ def extract_urls_from_csv(content: str) -> List[str]:
 
 def process_urls_ingestion(
     db: Session,
-    target_id: int,
+    target_id: Optional[int],
     raw_urls: List[str],
     source_type: str,
     filename: str = "manual_paste.txt",
 ) -> dict:
     """Core URL normalization, deduplication, and persistence logic."""
-    target = db.query(Target).filter(Target.id == target_id).first()
-    if not target:
+    target = db.query(Target).filter(Target.id == target_id).first() if target_id is not None else None
+    if target_id is not None and not target:
         raise ValueError("Target not found")
 
     raw_count = len(raw_urls)
@@ -106,11 +107,9 @@ def process_urls_ingestion(
 
     now = datetime.now(timezone.utc)
 
-    # Fetch existing normalized URLs for this target to check in-memory
-    existing_urls = {
-        u.normalized_url: u
-        for u in db.query(Url).filter(Url.target_id == target_id).all()
-    }
+    # URL identity is global now that imports can mix domains without targets.
+    # Keep any legacy target association on an existing record; never duplicate it.
+    existing_urls = {u.normalized_url: u for u in db.query(Url).all()}
 
     seen_in_batch = set()
 
@@ -204,16 +203,38 @@ def list_imports(target_id: Optional[int] = None, db: Session = Depends(get_db))
     return success_response(results)
 
 
+@router.delete("/{import_id}")
+def delete_import(import_id: int, db: Session = Depends(get_db)):
+    """Delete one import-history record without touching URLs or their results."""
+    import_record = db.query(ReconImport).filter(ReconImport.id == import_id).first()
+    if not import_record:
+        return error_response("NOT_FOUND", "Import record not found", status_code=404)
+    filename = import_record.filename
+
+    try:
+        db.delete(import_record)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        return error_response("DELETE_FAILED", "Could not delete the import record", status_code=500)
+
+    return success_response({
+        "deleted_id": import_id,
+        "filename": filename,
+        "urls_preserved": True,
+    })
+
+
 @router.post("")
 async def upload_import_files(
-    target_id: int = Form(...),
+    target_id: Optional[int] = Form(None),
     source_type: str = Form("Manual"),
     raw_text: Optional[str] = Form(None),
     files: Optional[List[UploadFile]] = File(None),
     db: Session = Depends(get_db),
 ):
-    target = db.query(Target).filter(Target.id == target_id).first()
-    if not target:
+    target = db.query(Target).filter(Target.id == target_id).first() if target_id is not None else None
+    if target_id is not None and not target:
         return error_response("NOT_FOUND", "Target not found", status_code=404)
 
     results = []

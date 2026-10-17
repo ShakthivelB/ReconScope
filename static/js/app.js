@@ -3,11 +3,8 @@
  */
 
 const ReconApp = {
-  activeTargetId: null,
-
   init() {
     this.initMobileNav();
-    this.initTargetSelector();
     this.initScanControls();
   },
 
@@ -50,46 +47,10 @@ const ReconApp = {
     }
   },
 
-  // Active Target Context across pages
-  async initTargetSelector() {
-    const selector = document.getElementById("global-target-select");
-    if (!selector) return;
-
-    this.activeTargetId = localStorage.getItem("reconscope_target_id") || "";
-
-    try {
-      const resp = await fetch("/api/targets");
-      const json = await resp.json();
-      if (json.success && json.data.length > 0) {
-        selector.innerHTML = '<option value="">All Targets</option>';
-        json.data.forEach((t) => {
-          const opt = document.createElement("option");
-          opt.value = t.id;
-          opt.textContent = `${t.name} (${t.root_domain})`;
-          if (this.activeTargetId && String(t.id) === String(this.activeTargetId)) {
-            opt.selected = true;
-          }
-          selector.appendChild(opt);
-        });
-
-        selector.addEventListener("change", (e) => {
-          this.activeTargetId = e.target.value;
-          localStorage.setItem("reconscope_target_id", this.activeTargetId);
-          window.dispatchEvent(new CustomEvent("targetChanged", { detail: { targetId: this.activeTargetId } }));
-        });
-      } else {
-        selector.innerHTML = '<option value="">No Targets Configured</option>';
-      }
-    } catch (e) {
-      console.error("Failed to load targets", e);
-    }
-  },
-
-  getActiveTarget() {
-    return this.activeTargetId ? parseInt(this.activeTargetId, 10) : null;
-  },
-
   scanPollTimer: null,
+  pollingScanId: null,
+  scanPollInFlight: false,
+  scanPollingSuppressed: false,
 
   initScanControls() {
     const checkButton = document.getElementById("check-urls-btn");
@@ -99,6 +60,8 @@ const ReconApp = {
       document.getElementById("global-scan-widget")?.classList.remove("active");
       if (this.scanPollTimer) clearTimeout(this.scanPollTimer);
       this.scanPollTimer = null;
+      this.pollingScanId = null;
+      this.scanPollingSuppressed = true;
       localStorage.removeItem("reconscope_scan_id");
     });
 
@@ -108,21 +71,20 @@ const ReconApp = {
   },
 
   async startUrlCheck() {
-    const targetId = this.getActiveTarget();
-    if (!targetId) {
-      this.showToast("Select a target before checking URLs.", "info");
-      return;
-    }
+    this.scanPollingSuppressed = false;
     const button = document.getElementById("check-urls-btn");
     if (button) button.disabled = true;
     try {
       const response = await fetch("/api/scans", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target_id: targetId, concurrency: 15, timeout: 10 }),
+        body: JSON.stringify({ concurrency: 15, timeout: 10 }),
       });
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.error?.message || "Could not start URL checks");
+      if (!Number.isInteger(Number(result.data?.id)) || Number(result.data.id) < 1) {
+        throw new Error("The scan API returned an invalid scan ID.");
+      }
       localStorage.setItem("reconscope_scan_id", result.data.id);
       this.showToast(`Checking ${result.data.total_urls.toLocaleString()} URLs in the background.`, "success");
       this.pollScan(result.data.id);
@@ -134,11 +96,13 @@ const ReconApp = {
   },
 
   async loadActiveScan() {
-    const targetId = this.getActiveTarget();
+    if (this.scanPollingSuppressed) return;
     try {
-      const response = await fetch(targetId ? `/api/scans/active?target_id=${targetId}` : "/api/scans/active");
+      const response = await fetch("/api/scans/active");
       const result = await response.json();
-      if (result.success && result.data) {
+      // success_response(None) is serialized as an empty object by the API
+      // helper. Only resume polling when the response contains a real scan id.
+      if (result.success && Number.isInteger(Number(result.data?.id)) && Number(result.data.id) > 0) {
         localStorage.setItem("reconscope_scan_id", result.data.id);
         this.pollScan(result.data.id);
       }
@@ -147,25 +111,57 @@ const ReconApp = {
     }
   },
 
-  async pollScan(scanId) {
+  async pollScan(scanId, fromTimer = false) {
+    if (this.scanPollingSuppressed) return;
     const widget = document.getElementById("global-scan-widget");
     if (!widget) return;
+    const validScanId = Number(scanId);
+    if (!Number.isInteger(validScanId) || validScanId < 1) {
+      localStorage.removeItem("reconscope_scan_id");
+      widget.classList.remove("active");
+      return;
+    }
+    if (this.scanPollInFlight) return;
+    if (!fromTimer && this.pollingScanId === validScanId) return;
+    if (this.scanPollTimer) clearTimeout(this.scanPollTimer);
+    this.scanPollTimer = null;
+    this.pollingScanId = validScanId;
+    this.scanPollInFlight = true;
     widget.classList.add("active");
+    let shouldContinue = true;
     try {
-      const response = await fetch(`/api/scans/${scanId}`);
+      const response = await fetch(`/api/scans/${validScanId}`);
       if (response.status === 404) {
         if (localStorage.getItem("reconscope_scan_id") === String(scanId)) {
           localStorage.removeItem("reconscope_scan_id");
         }
         if (this.scanPollTimer) clearTimeout(this.scanPollTimer);
         this.scanPollTimer = null;
+        this.pollingScanId = null;
+        shouldContinue = false;
         widget.classList.remove("active");
-        await this.loadActiveScan();
         return;
       }
       const result = await response.json();
-      if (!response.ok || !result.success) throw new Error(result.error?.message || "Could not read scan progress");
+      if (!response.ok || !result.success) {
+        const error = new Error(result.error?.message || "Could not read scan progress");
+        if (response.status === 422) {
+          this.pollingScanId = null;
+          shouldContinue = false;
+          localStorage.removeItem("reconscope_scan_id");
+        }
+        throw error;
+      }
       const scan = result.data;
+      if (!scan || scan.id == null || !scan.status) {
+        localStorage.removeItem("reconscope_scan_id");
+        this.pollingScanId = null;
+        shouldContinue = false;
+        if (this.scanPollTimer) clearTimeout(this.scanPollTimer);
+        this.scanPollTimer = null;
+        widget.classList.remove("active");
+        return;
+      }
       const completed = Number(scan.completed_urls || 0);
       const total = Number(scan.total_urls || 0);
       const title = document.getElementById("scan-widget-title");
@@ -185,13 +181,20 @@ const ReconApp = {
         window.dispatchEvent(new CustomEvent("scanUpdated"));
         if (this.scanPollTimer) clearTimeout(this.scanPollTimer);
         this.scanPollTimer = null;
+        this.pollingScanId = null;
         return;
       }
     } catch (error) {
       const progress = document.getElementById("scan-widget-progress");
       if (progress) progress.textContent = error.message;
+    } finally {
+      this.scanPollInFlight = false;
     }
-    this.scanPollTimer = setTimeout(() => this.pollScan(scanId), 1800);
+    if (shouldContinue && this.pollingScanId === validScanId) {
+      this.scanPollTimer = setTimeout(() => this.pollScan(validScanId, true), 1800);
+    } else if (!this.pollingScanId) {
+      this.loadActiveScan();
+    }
   },
 };
 

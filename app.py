@@ -13,6 +13,7 @@ from api.dashboard import router as dashboard_router
 from api.imports import router as imports_router
 from api.previews import router as previews_router
 from api.scans import router as scans_router
+from api.settings import router as settings_router
 from api.targets import router as targets_router
 from api.urls import router as urls_router
 from database.database import init_db
@@ -61,6 +62,7 @@ app.include_router(targets_router)
 app.include_router(imports_router)
 app.include_router(urls_router)
 app.include_router(scans_router)
+app.include_router(settings_router)
 app.include_router(previews_router)
 app.include_router(dashboard_router)
 
@@ -78,7 +80,8 @@ def page_dashboard(request: Request):
 
 @app.get("/targets", response_class=HTMLResponse)
 def page_targets(request: Request):
-    return templates.TemplateResponse(request=request, name="targets.html", context={"active_page": "targets"})
+    # Keep old bookmarks from breaking while removing Targets from the workflow.
+    return RedirectResponse(url="/imports", status_code=307)
 
 
 @app.get("/imports", response_class=HTMLResponse)

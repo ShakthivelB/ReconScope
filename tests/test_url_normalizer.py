@@ -31,3 +31,15 @@ def test_fragment_removal():
 
 def test_missing_scheme():
     assert normalize_url("api.example.com/v1") == "http://api.example.com/v1"
+
+
+def test_rejects_unsupported_or_malformed_explicit_schemes():
+    assert normalize_url("ftp://example.com/file") == ""
+    assert normalize_url("file:///etc/passwd") == ""
+    assert normalize_url("https:/missing-slashes") == ""
+    assert normalize_url("https://") == ""
+    assert normalize_url("https://example.com:invalid/path") == ""
+
+
+def test_ipv6_host_stays_bracketed_when_normalized():
+    assert normalize_url("http://[::1]:8080/path") == "http://[::1]:8080/path"

@@ -32,9 +32,8 @@
 {% block extra_scripts %}
 <script>
   async function loadTechAndSubdomains() {
-    const targetId = ReconApp.getActiveTarget();
-    const techUrl = targetId ? `/api/technologies?target_id=${targetId}` : "/api/technologies";
-    const subUrl = targetId ? `/api/urls/subdomains?target_id=${targetId}` : "/api/urls/subdomains";
+    const techUrl = "/api/technologies";
+    const subUrl = "/api/urls/subdomains";
 
     // Load Technologies
     try {
@@ -85,7 +84,6 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     loadTechAndSubdomains();
-    window.addEventListener("targetChanged", () => loadTechAndSubdomains());
   });
 </script>
 {% endblock %}

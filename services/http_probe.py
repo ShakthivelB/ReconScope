@@ -17,7 +17,6 @@ from database.models import (
     HttpResult,
     ScanJob,
     ScanResult,
-    Target,
     Technology,
     Url,
     UrlTechnology,
@@ -52,14 +51,15 @@ def extract_title(html_text: str) -> Optional[str]:
 
 async def probe_url(
     url: str,
-    root_domain: str,
+    root_domain: str = "",
     scope_rules: str = "",
+    enforce_scope: bool = False,
     timeout: float = 10.0,
     max_redirects: int = 5,
     max_response_size: int = 5 * 1024 * 1024,
 ) -> Dict[str, Any]:
     """
-    Probes an individual URL with strict SSRF protection, manual redirect validation,
+    Probes an individual URL with manual redirect validation,
     and metadata extraction. Explicitly distinguishes status codes from network failures.
     """
     current_url = url
@@ -82,12 +82,17 @@ async def probe_url(
         redirects_count = 0
 
         while True:
-            # 1. SSRF and Scope Check on EVERY hop
-            is_valid, reason = validate_target_url(current_url, root_domain, scope_rules)
+            # Apply network safety on every request and scope only when configured.
+            is_valid, reason = validate_target_url(
+                current_url, root_domain, scope_rules, enforce_scope
+            )
             if not is_valid:
                 return {
                     "success": False,
-                    "error": f"SSRF / Scope blocked: {reason}",
+                    "error": (
+                        f"Scope blocked: {reason}" if "out of scope" in reason.lower()
+                        else f"Network safety blocked: {reason}"
+                    ),
                     "status_code": None,
                     "response_time_ms": round((time.monotonic() - start_time) * 1000, 2),
                     "response_size_bytes": 0,
@@ -252,29 +257,21 @@ async def run_scan_job(
             logger.error(f"ScanJob {scan_job_id} not found.")
             return
 
-        target = db.query(Target).filter(Target.id == scan_job.target_id).first()
-        if not target:
-            scan_job.status = "failed"
-            db.commit()
-            return
-
-        # Query URL tuples to minimize memory consumption
-        url_records = db.query(Url.id, Url.normalized_url).filter(Url.target_id == target.id).all()
+        query = db.query(Url.id, Url.normalized_url)
+        if scan_job.target_id is not None:
+            query = query.filter(Url.target_id == scan_job.target_id)
+        url_records = query.all()
         total_urls = len(url_records)
         scan_job.total_urls = total_urls
         scan_job.status = "running"
         scan_job.started_at = datetime.now(timezone.utc)
         db.commit()
-
-        root_domain = target.root_domain
-        scope_rules = target.scope_rules or ""
-
         ACTIVE_SCANS[scan_job_id] = {"status": "running"}
 
         # Populate async queue
         queue = asyncio.Queue()
-        for u_id, u_norm in url_records:
-            queue.put_nowait((u_id, u_norm))
+        for record in url_records:
+            queue.put_nowait(record)
 
         db_lock = asyncio.Lock()
         completed_counter = 0
@@ -296,12 +293,35 @@ async def run_scan_job(
                     break
 
                 # Probe URL
-                res = await probe_url(
-                    url=u_norm,
-                    root_domain=root_domain,
-                    scope_rules=scope_rules,
-                    timeout=timeout,
-                )
+                try:
+                    res = await probe_url(
+                        url=u_norm,
+                        # Target associations remain for legacy data organization.
+                        # They do not restrict the new all-URL scan workflow.
+                        enforce_scope=False,
+                        timeout=timeout,
+                    )
+                except Exception as exc:
+                    # Keep a single unexpected URL failure from terminating this worker.
+                    logger.exception("Unexpected probe failure for URL %s", u_id)
+                    res = {
+                        "success": False,
+                        "error": f"Probe error: {exc}",
+                        "status_code": None,
+                        "response_time_ms": None,
+                        "response_size_bytes": 0,
+                        "content_type": None,
+                        "server": None,
+                        "http_version": None,
+                        "final_url": u_norm,
+                        "redirect_chain": [],
+                        "title": None,
+                        "language": None,
+                        "description": None,
+                        "powered_by": None,
+                        "headers": {},
+                        "technologies": [],
+                    }
 
                 # Persist result with thread-safe session
                 async with db_lock:

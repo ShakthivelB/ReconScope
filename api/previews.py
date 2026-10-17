@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from database.database import get_db
-from database.models import Target, Url
+from database.models import Url
 from services.browser_preview import (
     capture_preview,
     encode_preview_header,
@@ -27,15 +27,12 @@ async def get_url_preview(url_id: int, db: Session = Depends(get_db)):
     if not url_obj:
         return error_response("NOT_FOUND", "URL not found", status_code=404)
 
-    target = db.query(Target).filter(Target.id == url_obj.target_id).first()
-    if not target:
-        return error_response("TARGET_NOT_FOUND", "Target scope not found", status_code=404)
-
     try:
         preview = await capture_preview(
             url=url_obj.normalized_url,
-            root_domain=target.root_domain,
-            scope_rules=target.scope_rules,
+            # Legacy target associations must not limit previewing imported URLs.
+            # validate_target_url still applies SSRF and redirect protections.
+            enforce_scope=False,
             timeout_ms=10000,
         )
 
@@ -61,7 +58,12 @@ async def get_url_preview(url_id: int, db: Session = Depends(get_db)):
             },
         )
     except ValueError as ve:
-        return error_response("SCOPE_VIOLATION", str(ve), status_code=403)
+        message = str(ve)
+        if "out of scope" in message.lower():
+            return error_response("SCOPE_VIOLATION", message, status_code=403)
+        if "scheme" in message.lower() or "hostname" in message.lower() or "malformed" in message.lower():
+            return error_response("URL_INVALID", message, status_code=400)
+        return error_response("NETWORK_SAFETY_BLOCKED", message, status_code=403)
     except AsyncTimeoutError:
         return error_response("PREVIEW_TIMEOUT", "Preview exceeded its time limit. Try again or open the URL directly.", status_code=504)
     except Exception as e:

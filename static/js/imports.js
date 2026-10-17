@@ -4,29 +4,8 @@
 
 const ImportsModule = {
   async init() {
-    await this.populateTargetSelect();
     this.bindEvents();
     await this.loadImportHistory();
-    window.addEventListener("targetChanged", () => this.loadImportHistory());
-  },
-
-  async populateTargetSelect() {
-    const sel = document.getElementById("import-target-select");
-    if (!sel) return;
-
-    try {
-      const resp = await fetch("/api/targets");
-      const json = await resp.json();
-      if (json.success && json.data.length > 0) {
-        sel.innerHTML = json.data.map(t => `<option value="${t.id}">${t.name} (${t.root_domain})</option>`).join("");
-        const active = ReconApp.getActiveTarget();
-        if (active) sel.value = String(active);
-      } else {
-        sel.innerHTML = '<option value="">No targets available (Create one first)</option>';
-      }
-    } catch (e) {
-      console.error(e);
-    }
   },
 
   bindEvents() {
@@ -35,6 +14,15 @@ const ImportsModule = {
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
         await this.handleImport(form);
+      });
+    }
+
+    const historyList = document.getElementById("import-history-list");
+    if (historyList) {
+      historyList.addEventListener("click", async (event) => {
+        const button = event.target.closest("[data-delete-import]");
+        if (!button) return;
+        await this.deleteImport(button.dataset.deleteImport, button.dataset.filename || "this import");
       });
     }
 
@@ -84,6 +72,7 @@ const ImportsModule = {
     submitBtn.textContent = "Processing & Ingesting...";
 
     const formData = new FormData(form);
+    formData.delete("target_id");
 
     try {
       const resp = await fetch("/api/imports", {
@@ -127,11 +116,8 @@ const ImportsModule = {
     const listEl = document.getElementById("import-history-list");
     if (!listEl) return;
 
-    const targetId = ReconApp.getActiveTarget();
-    const url = targetId ? `/api/imports?target_id=${targetId}` : "/api/imports";
-
     try {
-      const resp = await fetch(url);
+      const resp = await fetch("/api/imports");
       const json = await resp.json();
       if (!json.success) throw new Error(json.error?.message);
 
@@ -143,19 +129,45 @@ const ImportsModule = {
       listEl.innerHTML = json.data.map(imp => `
         <div class="url-card">
           <div class="url-card-header">
-            <span style="font-weight: 600;">${imp.filename}</span>
-            <span class="chip">${imp.source_type}</span>
+            <span style="font-weight: 600;">${this.escapeHtml(imp.filename)}</span>
+            <span class="chip">${this.escapeHtml(imp.source_type)}</span>
           </div>
           <div class="url-meta-chips">
             <span class="chip">Raw: ${imp.raw_count}</span>
             <span class="chip" style="color:var(--accent-green);">+${imp.new_count} New</span>
             <span class="chip" style="color:var(--text-muted);">${imp.duplicate_count} Dupes</span>
             <span class="chip">📅 ${new Date(imp.created_at).toLocaleString()}</span>
+            <button type="button" class="btn btn-sm btn-secondary" data-delete-import="${imp.id}" data-filename="${this.escapeHtml(imp.filename)}">Delete import record</button>
           </div>
         </div>
       `).join("");
     } catch (e) {
       console.error(e);
+    }
+  },
+
+  escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[char]));
+  },
+
+  async deleteImport(importId, filename) {
+    const confirmed = window.confirm(
+      `Delete the import history record for “${filename}”? This removes only this history entry. URLs, scan results, pins, and other imports will be preserved. Uploaded files are not stored by ReconScope.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(`/api/imports/${encodeURIComponent(importId)}`, { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error?.message || "Could not delete the import record");
+      }
+      ReconApp.showToast(`Deleted import history for ${filename}. URLs and scan data were preserved.`, "success");
+      await this.loadImportHistory();
+    } catch (error) {
+      ReconApp.showToast(error.message, "error");
     }
   }
 };

@@ -16,13 +16,6 @@
     <div style="font-size: 16px; font-weight: 700; margin-bottom: 12px;">📥 Upload Discovery Output</div>
     <form id="import-form">
       <div class="form-group">
-        <label class="form-label" for="import-target-select">Associate with Target *</label>
-        <select id="import-target-select" name="target_id" class="form-select" required>
-          <option value="">Loading targets...</option>
-        </select>
-      </div>
-
-      <div class="form-group">
         <label class="form-label" for="import-source">Discovery Source *</label>
         <select id="import-source" name="source_type" class="form-select">
           <option value="Manual">Manual / Mixed</option>
@@ -70,7 +63,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="/static/js/imports.js"></script>
+<script src="/static/js/imports.js?v=import-delete-1"></script>
 <script>
   document.getElementById("drop-zone").addEventListener("click", () => {
     document.getElementById("import-files").click();

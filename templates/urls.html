@@ -57,6 +57,11 @@
     <span id="url-search-error" role="alert" aria-live="polite" style="color:var(--accent-red); font-size:12px;"></span>
   </div>
 
+  <div id="url-load-error" role="alert" aria-live="assertive" hidden style="color:var(--accent-red); font-size:12px;">
+    <span id="url-load-error-message"></span>
+    <button id="url-load-retry" type="button" class="btn btn-sm btn-secondary" style="margin-left:8px;">Retry</button>
+  </div>
+
   <!-- Status Filter Pills -->
   <div class="filter-pills">
     <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">STATUS:</span>
@@ -91,5 +96,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="/static/js/urls.js"></script>
+<script src="/static/js/urls.js?v=explorer-repair-1"></script>
 {% endblock %}

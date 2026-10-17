@@ -155,8 +155,9 @@ async def _wait_for_rendered_page(page, settle_timeout_ms: int) -> bool:
 
 async def capture_preview(
     url: str,
-    root_domain: str,
+    root_domain: str = "",
     scope_rules: str = "",
+    enforce_scope: bool = False,
     timeout_ms: int = 10000,
     settle_timeout_ms: int = 3000,
 ) -> PreviewCapture:
@@ -175,16 +176,14 @@ async def capture_preview(
 
     async def validate(url_to_check: str):
         return await asyncio.to_thread(
-            validate_target_url,
-            url_to_check,
-            root_domain,
-            scope_rules,
+            validate_target_url, url_to_check, root_domain, scope_rules, enforce_scope
         )
 
     async with asyncio.timeout(total_timeout_ms / 1000):
         is_valid, reason = await validate(url)
         if not is_valid:
-            raise ValueError(f"SSRF / Scope protection blocked preview: {reason}")
+            prefix = "Scope blocked" if "out of scope" in reason.lower() else "Network safety blocked"
+            raise ValueError(f"{prefix} preview: {reason}")
 
         async with _preview_semaphore:
             browser = await get_browser()
@@ -212,16 +211,23 @@ async def capture_preview(
                 except PlaywrightError:
                     is_main_frame = False
 
-                if not is_main_frame:
-                    await route.continue_()
-                    return
-
-                if main_request_url is None:
+                if is_main_frame and main_request_url is None:
                     main_request_url = request.url
 
-                valid, why = await validate(request.url)
+                # Validate every browser destination, including public third-party assets.
+                if is_main_frame:
+                    valid, why = await validate(request.url)
+                else:
+                    valid, why = await asyncio.to_thread(
+                        validate_target_url,
+                        request.url,
+                        root_domain if is_main_frame else "",
+                        scope_rules if is_main_frame else "",
+                        enforce_scope if is_main_frame else False,
+                    )
                 if not valid:
-                    blocked_reason = f"Redirect / navigation blocked: {why}"
+                    if is_main_frame:
+                        blocked_reason = f"Redirect / navigation blocked: {why}"
                     await route.abort("blockedbyclient")
                     return
                 await route.continue_()

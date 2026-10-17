@@ -34,7 +34,6 @@ def test_api_targets_crud():
     resp = client.post("/api/targets", json={
         "name": "Integration Target",
         "root_domain": "integ.com",
-        "scope_rules": "*.integ.com\ninteg.com",
         "notes": "Testing",
     })
     assert resp.status_code == 201
@@ -57,7 +56,7 @@ def test_api_targets_crud():
 def test_api_import_and_url_query():
     # Create target
     resp = client.post("/api/targets", json={
-        "name": "Import Scope",
+        "name": "Import Target",
         "root_domain": "recon.test",
     })
     target_id = resp.json()["data"]["id"]
@@ -86,7 +85,7 @@ def test_api_import_and_url_query():
 
 def test_api_pin_urls_and_filter_combinations():
     target_resp = client.post("/api/targets", json={
-        "name": "Pinned URL Scope",
+        "name": "Pinned URL Target",
         "root_domain": "pin.test",
     })
     target_id = target_resp.json()["data"]["id"]
@@ -149,6 +148,19 @@ def test_html_pages():
         resp = client.get(page)
         assert resp.status_code == 200
         assert "<!DOCTYPE html>" in resp.text
+        assert 'href="/targets"' not in resp.text
+        assert 'id="global-target-select"' not in resp.text
+
+    response = client.get("/targets", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/imports"
+
+
+def test_import_page_has_no_target_selection():
+    response = client.get("/imports")
+    assert response.status_code == 200
+    assert 'id="import-target-select"' not in response.text
+    assert 'name="target_id"' not in response.text
 
 
 def test_demo_seed_endpoint_is_removed():

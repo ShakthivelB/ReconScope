@@ -200,21 +200,10 @@ body {
   justify-content: center;
 }
 
-.target-selector-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.target-select {
-  background-color: var(--bg-tertiary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  padding: 8px 12px;
+.topbar-context {
+  color: var(--text-secondary);
   font-size: 13px;
-  min-height: 40px;
-  cursor: pointer;
+  font-weight: 600;
 }
 
 .topbar-right {

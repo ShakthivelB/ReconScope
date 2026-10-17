@@ -117,9 +117,17 @@ def get_dashboard_stats(target_id: Optional[int] = None, db: Session = Depends(g
         .join(UrlTechnology, Technology.id == UrlTechnology.technology_id)
         .join(Url, UrlTechnology.url_id == Url.id)
     )
+    technology_count_q = (
+        db.query(func.count(distinct(Technology.id)))
+        .select_from(Technology)
+        .join(UrlTechnology, Technology.id == UrlTechnology.technology_id)
+        .join(Url, UrlTechnology.url_id == Url.id)
+    )
     if target_id:
         tech_q = tech_q.filter(Url.target_id == target_id)
+        technology_count_q = technology_count_q.filter(Url.target_id == target_id)
     top_techs = tech_q.group_by(Technology.id).order_by(func.count(UrlTechnology.url_id).desc()).limit(10).all()
+    technology_count = technology_count_q.scalar() or 0
 
     return success_response({
         "metrics": {
@@ -137,7 +145,7 @@ def get_dashboard_stats(target_id: Optional[int] = None, db: Session = Depends(g
             "errors": c_errors,
             "interesting": interesting_count,
             "subdomains": subdomains_count,
-            "technologies": len(top_techs),
+            "technologies": technology_count,
         },
         "charts": {
             "status_distribution": {

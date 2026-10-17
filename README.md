@@ -10,7 +10,9 @@ It transforms noisy outputs from tools such as `subfinder`, `amass`, `gau`, `way
 
 - **Local-First & Offline Resilience**: Runs locally on `127.0.0.1:8000` with SQLite storage. No cloud dependencies, no SaaS authentication.
 - **Zero Screenshot Persistence (Strict Invariant)**: Webpage previews are rendered on-demand via Playwright directly into in-memory byte buffers and streamed to the client. Previews are never written to disk, cache directories, or SQLite.
-- **SSRF Protection Shield**: Comprehensive outbound validation blocking private/loopback/link-local IPv4/IPv6 networks (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `::1`, `fc00::/7`), DNS rebinding, and redirect hops.
+- **Network Safety**: HTTP and HTTPS URLs are checked against private, loopback, link-local, metadata, and DNS-resolved prohibited addresses on every redirect. Public URLs can span multiple domains without target setup.
+- **URL Checks & Previews**: Imported HTTP and HTTPS URLs can be checked and previewed across multiple domains, with manual redirect handling and bounded request sizes.
+- **Import History Management**: Individual import-history records can be deleted while preserving URLs, scan results, and pins. Uploaded source files are not stored by ReconScope.
 - **Recon Triage & Normalization**: Deterministic URL normalization and deduplication across multiple discovery sources with triage flags for high-signal endpoints (`/admin`, `/api/v1`, `/swagger-ui`, `redirect=`, `token=`).
 - **Responsive Mobile-First Interface**: Full touch-target accessibility ($\ge 44\text{px}$), drawer navigation, and clean cyber dark workstation UI.
 - **Recon Session Diffs**: Compare probe sessions to instantly highlight new URLs, removed endpoints, and HTTP status code changes.
@@ -102,13 +104,13 @@ katana -u https://example.com -o katana.txt
 ```
 
 ### 2. Ingest Into ReconScope
-1. Navigate to **Targets** (`http://127.0.0.1:8000/targets`) and create a target (e.g., `Example Corp`, Root: `example.com`, Scope: `*.example.com`).
-2. Go to **Import Recon** (`http://127.0.0.1:8000/imports`).
+1. Go to **Import Recon** (`http://127.0.0.1:8000/imports`).
+2. Upload or paste URLs directly. Imports can contain URLs from multiple public domains; no target setup is needed.
 3. Drag & drop `subdomains.txt`, `gau.txt`, or `katana.txt` into the upload zone or paste raw URLs directly.
-4. Select the matching source tool from the dropdown and click **Start Import & Deduplication**.
+4. Select the matching source tool and click **Start Import & Deduplication**, then use **Check URLs** and URL Explorer.
 
 ### 3. Probe and Triage
-1. Select the target in the top bar and click **Check URLs** to start background HTTP status and metadata checks.
+1. Click **Check URLs** to check all imported URLs.
 2. Follow progress in the compact status widget while continuing to browse. Dashboard counts update as results are saved.
 3. Open **URL Explorer** (`http://127.0.0.1:8000/urls`) to filter by status, search paths (e.g. `/api/`), inspect response details, or expand **Web Preview** for live in-memory Playwright rendering.
 

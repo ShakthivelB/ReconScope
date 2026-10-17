@@ -14,6 +14,11 @@
   </div>
 </div>
 
+<div id="dashboard-error" class="url-search-error" role="alert" aria-live="assertive" hidden style="margin-bottom:16px;">
+  <span id="dashboard-error-message"></span>
+  <button id="dashboard-retry" type="button" class="btn btn-sm btn-secondary" style="margin-left:8px;">Retry</button>
+</div>
+
 <!-- Key Metrics Grid -->
 <div class="metrics-grid">
   <div class="metric-card">
@@ -112,5 +117,5 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="/static/js/dashboard.js"></script>
+<script src="/static/js/dashboard.js?v=dashboard-repair-1"></script>
 {% endblock %}

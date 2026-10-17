@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from database.database import get_db
@@ -13,7 +14,7 @@ router = APIRouter(prefix="/api/scans", tags=["Scans"])
 
 
 class ScanCreateSchema(BaseModel):
-    target_id: int
+    target_id: Optional[int] = None
     concurrency: Optional[int] = Field(15, ge=1, le=50)
     timeout: Optional[float] = Field(10.0, ge=2.0, le=30.0)
 
@@ -53,7 +54,7 @@ def get_active_scan(target_id: Optional[int] = None, db: Session = Depends(get_d
     """Returns currently running or queued scan job if any."""
     query = db.query(ScanJob).filter(ScanJob.status.in_(["running", "queued", "paused"]))
     if target_id:
-        query = query.filter(ScanJob.target_id == target_id)
+        query = query.filter(or_(ScanJob.target_id == target_id, ScanJob.target_id.is_(None)))
     scan = query.order_by(ScanJob.created_at.desc()).first()
     if not scan:
         return success_response(None)
@@ -81,20 +82,23 @@ def start_scan(payload: ScanCreateSchema, background_tasks: BackgroundTasks, db:
     Queues the async scan worker as a FastAPI-managed background task so the
     HTTP response returns before probing starts and no detached task is needed.
     """
-    target = db.query(Target).filter(Target.id == payload.target_id).first()
-    if not target:
+    target = db.query(Target).filter(Target.id == payload.target_id).first() if payload.target_id else None
+    if payload.target_id is not None and not target:
         return error_response("NOT_FOUND", "Target not found", status_code=404)
 
-    url_count = db.query(Url).filter(Url.target_id == payload.target_id).count()
+    url_query = db.query(Url)
+    if payload.target_id is not None:
+        url_query = url_query.filter(Url.target_id == payload.target_id)
+    url_count = url_query.count()
     if url_count == 0:
-        return error_response("NO_URLS", "Target has no URLs to scan. Please import URLs first.", status_code=400)
+        return error_response("NO_URLS", "No URLs are available to scan. Please import URLs first.", status_code=400)
 
-    active_job = (
-        db.query(ScanJob)
-        .filter(ScanJob.target_id == payload.target_id, ScanJob.status.in_(["running", "queued", "paused"]))
-        .order_by(ScanJob.created_at.desc())
-        .first()
-    )
+    active_query = db.query(ScanJob).filter(ScanJob.status.in_(["running", "queued", "paused"]))
+    if payload.target_id is not None:
+        active_query = active_query.filter(
+            or_(ScanJob.target_id == payload.target_id, ScanJob.target_id.is_(None))
+        )
+    active_job = active_query.order_by(ScanJob.created_at.desc()).first()
     if active_job:
         return success_response({
             "id": active_job.id,

@@ -142,12 +142,12 @@ class FakeBrowser:
 @pytest.mark.asyncio
 async def test_preview_waits_for_redirected_render_and_returns_final_metadata(monkeypatch):
     initial = "https://sg.employer.seek.com/oauth/register?tracking=test"
-    final = "https://authenticate.seek.com/login?state=fixture"
+    final = "https://accounts.external-example.net/login?state=fixture"
     page = FakePage(initial, final)
     browser = FakeBrowser(FakeContext(page))
     checked_hosts = []
 
-    def allow_scoped_url(url, _root, _rules):
+    def allow_public_url(url, *_args):
         checked_hosts.append(url)
         return True, ""
 
@@ -157,13 +157,12 @@ async def test_preview_waits_for_redirected_render_and_returns_final_metadata(mo
     async def inline_to_thread(function, *args):
         return function(*args)
 
-    monkeypatch.setattr(browser_preview, "validate_target_url", allow_scoped_url)
+    monkeypatch.setattr(browser_preview, "validate_target_url", allow_public_url)
     monkeypatch.setattr(browser_preview, "get_browser", fake_get_browser)
     monkeypatch.setattr(browser_preview.asyncio, "to_thread", inline_to_thread)
 
     capture = await browser_preview.capture_preview(
         initial,
-        root_domain="seek.com",
         timeout_ms=18000,
         settle_timeout_ms=1800,
     )
@@ -190,14 +189,40 @@ async def test_preview_waits_for_redirected_render_and_returns_final_metadata(mo
 
 
 @pytest.mark.asyncio
-async def test_preview_blocks_out_of_scope_top_level_redirect(monkeypatch):
+async def test_preview_allows_public_cross_domain_top_level_redirect(monkeypatch):
     initial = "https://sg.employer.seek.com/oauth/register"
-    final = "https://authenticate.seek.com/login"
+    final = "https://accounts.external-example.net/login"
     page = FakePage(initial, final)
     browser = FakeBrowser(FakeContext(page))
 
-    def validate(url, _root, _rules):
-        return (url == initial, "outside configured scope")
+    def validate(_url, *_args):
+        return True, ""
+
+    async def fake_get_browser():
+        return browser
+
+    async def inline_to_thread(function, *args):
+        return function(*args)
+
+    monkeypatch.setattr(browser_preview, "validate_target_url", validate)
+    monkeypatch.setattr(browser_preview, "get_browser", fake_get_browser)
+    monkeypatch.setattr(browser_preview.asyncio, "to_thread", inline_to_thread)
+
+    capture = await browser_preview.capture_preview(initial, timeout_ms=8000)
+    assert capture.final_url == final
+
+
+@pytest.mark.asyncio
+async def test_preview_blocks_redirect_to_prohibited_destination(monkeypatch):
+    initial = "https://public.example/"
+    final = "http://127.0.0.1/admin"
+    page = FakePage(initial, final)
+    browser = FakeBrowser(FakeContext(page))
+
+    def validate(url, *_args):
+        if "127.0.0.1" in url:
+            return False, "Private or blocked IP address: 127.0.0.1"
+        return True, ""
 
     async def fake_get_browser():
         return browser
@@ -210,7 +235,7 @@ async def test_preview_blocks_out_of_scope_top_level_redirect(monkeypatch):
     monkeypatch.setattr(browser_preview.asyncio, "to_thread", inline_to_thread)
 
     with pytest.raises(ValueError, match="Redirect / navigation blocked"):
-        await browser_preview.capture_preview(initial, "employer.seek.com", timeout_ms=8000)
+        await browser_preview.capture_preview(initial, timeout_ms=8000)
 
 
 @pytest.mark.asyncio
@@ -242,7 +267,6 @@ async def test_preview_captures_best_available_page_when_it_never_settles(monkey
 
     capture = await browser_preview.capture_preview(
         initial,
-        root_domain="seek.com",
         timeout_ms=8000,
         settle_timeout_ms=600,
     )
@@ -277,7 +301,7 @@ async def test_http_error_pages_and_json_are_valid_in_memory_previews(monkeypatc
     monkeypatch.setattr(browser_preview, "get_browser", fake_get_browser)
     monkeypatch.setattr(browser_preview.asyncio, "to_thread", inline_to_thread)
 
-    capture = await browser_preview.capture_preview(url, "example", timeout_ms=8000)
+    capture = await browser_preview.capture_preview(url, timeout_ms=8000)
 
     assert capture.image_bytes == b"in-memory-jpeg"
     assert capture.requested_url == url
@@ -304,7 +328,7 @@ def test_preview_metadata_endpoint_headers(monkeypatch):
     )
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine)()
-    target = Target(name="Seek Test", root_domain="seek.com", scope_rules="*.seek.com")
+    target = Target(name="Seek Test", root_domain="seek.com")
     db.add(target)
     db.flush()
     url = Url(
@@ -361,6 +385,54 @@ def test_preview_metadata_endpoint_headers(monkeypatch):
     stored_http_result = db.query(HttpResult).filter(HttpResult.url_id == url.id).one()
     assert stored_http_result.status_code == 200
     assert stored_http_result.content_type == "application/json"
+    db.close()
+    engine.dispose()
+
+
+def test_preview_endpoint_accepts_url_without_target(monkeypatch):
+    from api import previews
+    from services.browser_preview import PreviewCapture
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+    url = Url(
+        target_id=None,
+        original_url="https://cdn.example.net/app.js",
+        normalized_url="https://cdn.example.net/app.js",
+        scheme="https",
+        hostname="cdn.example.net",
+        path="/app.js",
+    )
+    db.add(url)
+    db.commit()
+    received = {}
+
+    async def fake_capture(**kwargs):
+        received.update(kwargs)
+        return PreviewCapture(
+            image_bytes=b"jpeg",
+            requested_url=url.normalized_url,
+            final_url=url.normalized_url,
+            title="Asset preview",
+            status_code=200,
+            content_type="text/html",
+            response_headers={},
+            redirect_chain=[],
+            browser_version="test-chromium",
+            settled=True,
+            main_frame_navigated=True,
+        )
+
+    monkeypatch.setattr(previews, "capture_preview", fake_capture)
+    response = asyncio.run(previews.get_url_preview(url.id, db))
+    assert isinstance(response, Response)
+    assert response.body == b"jpeg"
+    assert received["enforce_scope"] is False
     db.close()
     engine.dispose()
 
